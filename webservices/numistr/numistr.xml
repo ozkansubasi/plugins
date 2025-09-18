@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="webservices" method="upgrade" version="4.0">
+  <name>plg_webservices_numistr</name>
+  <author>NumisTR</author>
+  <version>1.0.2</version>
+  <creationDate>2025-09-09</creationDate>
+  <description>Registers /api/index.php/v1/variants (list & item by numeric id) via com_numistr.</description>
+  <files>
+    <filename plugin="numistr">numistr.php</filename>
+    <filename>index.html</filename>
+  </files>
+</extension>
