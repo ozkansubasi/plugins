@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension version="4.0" type="plugin" group="content" method="upgrade">
+    <name>plg_content_numistr</name>
+    <author>Sizin Adınız</author>
+    <creationDate>Eylül 2025</creationDate>
+    <copyright>Copyright (C) 2025. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later; see LICENSE.txt</license>
+    <version>1.0.0</version>
+    <description>Joomla makalelerine dinamik olarak sikke görseli URL'si ekler ve YOOtheme Pro'da kullanılabilir hale getirir.</description>
+    <files>
+        <filename plugin="numistr">numistr.php</filename>
+    </files>
+</extension>

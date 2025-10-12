@@ -2,11 +2,93 @@
 <extension type="plugin" group="webservices" method="upgrade" version="4.0">
   <name>plg_webservices_numistr</name>
   <author>NumisTR</author>
-  <version>1.0.2</version>
-  <creationDate>2025-09-09</creationDate>
-  <description>Registers /api/index.php/v1/variants (list & item by numeric id) via com_numistr.</description>
+  <version>1.1.0</version>
+  <creationDate>2025-01-11</creationDate>
+  <description>NumisTR REST API Plugin - Modular architecture with authentication, variants, regions, materials, statistics, facets and suggestions endpoints.</description>
+  
   <files>
     <filename plugin="numistr">numistr.php</filename>
     <filename>index.html</filename>
+    
+    <!-- Config Directory -->
+    <folder>config</folder>
+    
+    <!-- Helpers Directory -->
+    <folder>helpers</folder>
   </files>
+  
+  <config>
+    <fields name="params">
+      <fieldset name="basic">
+        <field
+          name="root_category_id"
+          type="number"
+          label="Root Category ID"
+          description="Sikkeler kök kategori ID'si"
+          default="16"
+          required="true"
+        />
+        
+        <field
+          name="pro_group_id"
+          type="number"
+          label="Pro Group ID"
+          description="Pro üyelik grup ID'si"
+          default="9"
+          required="true"
+        />
+        
+        <field
+          name="safe_cap"
+          type="number"
+          label="Safe Cap"
+          description="Geniş sorgularda sonuç seti üst sınırı"
+          default="2000"
+          min="100"
+          max="10000"
+          step="100"
+        />
+        
+        <field
+          name="enable_debug"
+          type="radio"
+          label="Debug Mode"
+          description="Log mesajlarını etkinleştir"
+          default="0"
+          class="btn-group btn-group-yesno"
+        >
+          <option value="0">JNO</option>
+          <option value="1">JYES</option>
+        </field>
+      </fieldset>
+      
+      <fieldset name="api_endpoints" label="API Endpoints">
+        <field
+          name="info_text"
+          type="note"
+          label="Available Endpoints"
+          description="
+            GET /v1/ping - Health check
+            GET /v1/user/profile - User profile (Auth Required)
+            GET /v1/user/subscription - Subscription info (Auth Required)
+            GET /v1/regions - Region list
+            GET /v1/materials - Material list
+            GET /v1/stats - Statistics
+            GET /v1/variants - Variant list with filters
+            GET /v1/variants/facets - Faceted search
+            GET /v1/variants/{id} - Variant detail
+            GET /v1/variants/{id}/images - Variant images
+            GET /v1/suggest/mints - Mint suggestions
+            GET /v1/suggest/authorities - Authority suggestions
+          "
+        />
+      </fieldset>
+    </fields>
+  </config>
+  
+  <updateservers>
+    <server type="extension" priority="1" name="NumisTR API Updates">
+      https://numistr.org/updates/plg_webservices_numistr.xml
+    </server>
+  </updateservers>
 </extension>
