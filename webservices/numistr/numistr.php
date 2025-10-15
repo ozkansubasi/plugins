@@ -146,6 +146,18 @@ class PlgWebservicesNumistr extends CMSPlugin
             return;
         }
 
+        // ===================== RECOGNITION: /v1/recognize (MOCK) ===========
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/recognize(?:[/?#;]|$)~', $uri)) {
+            $this->handleRecognition($uri);
+            return;
+        }
+
+        // ===================== SCAN QUOTA: /v1/user/scan-quota =============
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/scan-quota(?:[/?#;]|$)~', $uri)) {
+            $this->handleScanQuota($uri);
+            return;
+        }
+
         // ===================== IMAGES: /v1/variants/{id}/images ============
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/variants/([^/?#;]+)/images(?:[/?#;]|$)~', $uri, $m)) {
             $this->handleVariantImages($uri, (int)$m[1]);
@@ -428,16 +440,13 @@ class PlgWebservicesNumistr extends CMSPlugin
             $hasImagesF = in_array($hasImagesFStr, ['1','true','yes'], true);
 
             // Guardrails
-            if (!$countOnly) {
-                if ($materialF !== '' && $mintF === '' && $authorityF === '' && $regionF === '' && $yearFromF === null && $yearToF === null) {
-                    $this->responseHelper->sendError(400, 'Query too broad', 'filter[material] tek başına kullanılamaz.');
-                    return;
-                }
-                if ($regionF !== '' && $mintF === '' && $authorityF === '' && $yearFromF === null && $yearToF === null) {
-                    $this->responseHelper->sendError(400, 'Query too broad', 'filter[region] tek başına kullanılamaz.');
-                    return;
-                }
-            }
+			if (!$countOnly) {
+				if ($materialF !== '' && $mintF === '' && $authorityF === '' && $regionF === '' && $yearFromF === null && $yearToF === null) {
+					$this->responseHelper->sendError(400, 'Query too broad', 'filter[material] tek başına kullanılamaz. Lütfen bölge, darphane veya yıl ekleyin.');
+					return;
+				}
+				// Region tek başına artık izin veriliyor - bu blok silindi
+			}
 
             // İzin verilen kategoriler
             $allowedCatIds = $this->dbHelper->getAllowedCatIds($db, $this->config['ROOT_CAT_ID']);
@@ -1346,5 +1355,212 @@ class PlgWebservicesNumistr extends CMSPlugin
             $data[] = $item;
         }
         return $data;
+    }
+
+    /**
+     * POST /v1/recognize (MOCK - Phase 1)
+     * Mock coin recognition endpoint for testing
+     */
+    private function handleRecognition(string $uri): void
+    {
+        $this->dbg('recognition', $uri);
+
+        // Auth required
+        $user = $this->requireAuth();
+
+        // Rate limiting
+        $this->checkRateLimit('recognition', 10); // 10 requests per minute
+
+        try {
+            $app = Factory::getApplication();
+            $db = Factory::getDbo();
+
+            // Check if image was uploaded
+            $files = $app->input->files->get('image');
+            if (!$files || !isset($files['tmp_name']) || !is_uploaded_file($files['tmp_name'])) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Image file required');
+                return;
+            }
+
+            // Validate file type
+            $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+            $fileType = $files['type'] ?? '';
+            if (!in_array($fileType, $allowedTypes, true)) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Invalid image format. Only JPEG and PNG allowed.');
+                return;
+            }
+
+            // Validate file size (max 5MB)
+            $fileSize = $files['size'] ?? 0;
+            if ($fileSize > 5 * 1024 * 1024) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Image too large. Maximum 5MB allowed.');
+                return;
+            }
+
+            // Check scan quota
+            $isPro = $this->authHelper->hasProSubscription($user);
+            $currentMonth = date('Y-m');
+
+            // Get or create quota record
+            $quotaQuery = $db->getQuery(true)
+                ->select(['user_id', 'month', 'scans_used', 'is_pro'])
+                ->from($db->quoteName('#__numistr_scan_quota'))
+                ->where($db->quoteName('user_id') . ' = ' . (int)$user->id)
+                ->where($db->quoteName('month') . ' = ' . $db->quote($currentMonth));
+
+            $db->setQuery($quotaQuery);
+            $quotaRecord = $db->loadAssoc();
+
+            if (!$quotaRecord) {
+                // Create new quota record
+                $insertQuery = $db->getQuery(true)
+                    ->insert($db->quoteName('#__numistr_scan_quota'))
+                    ->columns([$db->quoteName('user_id'), $db->quoteName('month'), $db->quoteName('scans_used'), $db->quoteName('is_pro')])
+                    ->values((int)$user->id . ', ' . $db->quote($currentMonth) . ', 0, ' . (int)$isPro);
+                $db->setQuery($insertQuery);
+                $db->execute();
+
+                $scansUsed = 0;
+            } else {
+                $scansUsed = (int)$quotaRecord['scans_used'];
+            }
+
+            // Check quota limit
+            $scanLimit = $isPro ? 999999 : 10; // Pro: unlimited, Free: 10/month
+            $remaining = $scanLimit - $scansUsed;
+
+            if ($remaining <= 0 && !$isPro) {
+                $this->responseHelper->sendError(429, 'Quota Exceeded', 'Monthly scan limit reached. Upgrade to Pro for unlimited scans.');
+                return;
+            }
+
+            // Increment scan count
+            $updateQuery = $db->getQuery(true)
+                ->update($db->quoteName('#__numistr_scan_quota'))
+                ->set($db->quoteName('scans_used') . ' = ' . $db->quoteName('scans_used') . ' + 1')
+                ->where($db->quoteName('user_id') . ' = ' . (int)$user->id)
+                ->where($db->quoteName('month') . ' = ' . $db->quote($currentMonth));
+            $db->setQuery($updateQuery);
+            $db->execute();
+
+            // MOCK RESPONSE - Return random coins from database
+            $allowedCatIds = $this->dbHelper->getAllowedCatIds($db, $this->config['ROOT_CAT_ID']);
+            if (empty($allowedCatIds)) {
+                $this->responseHelper->sendError(500, 'Internal Error', 'No coins available');
+                return;
+            }
+            $allowedCatIdsSql = implode(',', array_map('intval', $allowedCatIds));
+
+            // Get 5 random variants with images
+            $mockQuery = $db->getQuery(true)
+                ->select([
+                    $db->quoteName('v.article_id'),
+                    $db->quoteName('v.title_tr'),
+                    $db->quoteName('v.title_en'),
+                    $db->quoteName('v.region_code'),
+                    $db->quoteName('v.date_from'),
+                    $db->quoteName('v.date_to'),
+                ])
+                ->from($db->quoteName('o_numistr_variants_public', 'v'))
+                ->join('INNER', $db->quoteName('#__content', 'ct') . ' ON ' . $db->quoteName('ct.id') . ' = ' . $db->quoteName('v.article_id'))
+                ->where($db->quoteName('ct.catid') . ' IN (' . $allowedCatIdsSql . ')')
+                ->where($db->quoteName('ct.state') . ' = 1')
+                ->where('EXISTS (SELECT 1 FROM ' . $db->quoteName('coins_images', 'ci') . ' WHERE ' . $db->quoteName('ci.coin_id') . ' = ' . $db->quoteName('v.article_id') . ')')
+                ->order('RAND()')
+                ->setLimit(5);
+
+            $db->setQuery($mockQuery);
+            $mockResults = $db->loadAssocList() ?: [];
+
+            // Build response matches
+            $matches = [];
+            $confidenceBase = 0.85;
+            $confidenceDecrement = 0.10;
+
+            foreach ($mockResults as $index => $result) {
+                $articleId = (int)$result['article_id'];
+                $title = $result['title_tr'] ?: $result['title_en'] ?: 'Unknown';
+                $region = $result['region_code'] ?: null;
+                $dateFrom = $result['date_from'] ?: null;
+                $dateTo = $result['date_to'] ?: null;
+
+                $dateRange = null;
+                if ($dateFrom !== null || $dateTo !== null) {
+                    $dateRange = ($dateFrom ?: '?') . ' - ' . ($dateTo ?: '?');
+                }
+
+                // Get first image
+                $images = $this->getVariantImages($db, $articleId, 0, 1);
+                $thumbnailUrl = !empty($images) ? $images[0]['url'] : null;
+
+                $confidence = max(0.50, $confidenceBase - ($index * $confidenceDecrement));
+
+                $matches[] = [
+                    'article_id' => $articleId,
+                    'title' => $title,
+                    'confidence' => round($confidence, 2),
+                    'region' => $region,
+                    'date_range' => $dateRange,
+                    'thumbnail_url' => $thumbnailUrl,
+                    'explanation' => 'Mock match #' . ($index + 1) . ' - Visual similarity detected',
+                ];
+            }
+
+            $payload = [
+                'matches' => $matches,
+                'remaining_scans' => max(0, $remaining - 1),
+                'message' => 'Recognition successful (MOCK DATA - Phase 1)',
+            ];
+
+            $this->responseHelper->sendJson($payload);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * GET /v1/user/scan-quota
+     */
+    private function handleScanQuota(string $uri): void
+    {
+        $this->dbg('scan-quota', $uri);
+
+        // Auth required
+        $user = $this->requireAuth();
+
+        try {
+            $db = Factory::getDbo();
+            $isPro = $this->authHelper->hasProSubscription($user);
+            $currentMonth = date('Y-m');
+
+            // Get quota record
+            $quotaQuery = $db->getQuery(true)
+                ->select(['scans_used', 'is_pro'])
+                ->from($db->quoteName('#__numistr_scan_quota'))
+                ->where($db->quoteName('user_id') . ' = ' . (int)$user->id)
+                ->where($db->quoteName('month') . ' = ' . $db->quote($currentMonth));
+
+            $db->setQuery($quotaQuery);
+            $quotaRecord = $db->loadAssoc();
+
+            $scansUsed = $quotaRecord ? (int)$quotaRecord['scans_used'] : 0;
+            $scanLimit = $isPro ? 999999 : 10;
+
+            // Calculate reset date (first day of next month)
+            $resetDate = date('Y-m-01', strtotime('first day of next month'));
+
+            $payload = [
+                'scans_used' => $scansUsed,
+                'scan_limit' => $isPro ? -1 : $scanLimit, // -1 means unlimited
+                'is_pro' => $isPro,
+                'reset_date' => $resetDate,
+            ];
+
+            $this->responseHelper->sendJson($payload);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
     }
 }
