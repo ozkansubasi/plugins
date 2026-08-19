@@ -19,7 +19,7 @@ class NumisTRRateLimiter
     
     /**
      * Rate limit kontrolü
-     * 
+     *
      * @param string $endpoint Endpoint adı
      * @param int $maxRequests Dakikada maksimum istek
      * @return bool İstek yapılabilir mi?
@@ -28,27 +28,27 @@ class NumisTRRateLimiter
     {
         $ip = $this->getClientIP();
         $key = 'rate_limit_' . md5($ip . '_' . $endpoint);
-        
-        $cache = Factory::getCache('numistr_api', 'callback');
-        $cache->setLifeTime($this->cacheLifetime);
-        
+
         try {
+            $cache = Factory::getCache('numistr_api', 'file');
+            $cache->setLifeTime($this->cacheLifetime);
+
             $count = $cache->get($key);
-            
-            if ($count === false) {
+
+            if ($count === false || $count === null) {
                 // İlk istek
                 $cache->store(1, $key);
                 return true;
             }
-            
+
             if ($count >= $maxRequests) {
                 return false;
             }
-            
+
             // Sayacı artır
             $cache->store($count + 1, $key);
             return true;
-            
+
         } catch (\Exception $e) {
             // Cache hatası varsa izin ver (fail-open)
             return true;
@@ -62,15 +62,19 @@ class NumisTRRateLimiter
     {
         $ip = $this->getClientIP();
         $key = 'rate_limit_' . md5($ip . '_' . $endpoint);
-        
-        $cache = Factory::getCache('numistr_api', 'callback');
-        $count = $cache->get($key);
-        
-        if ($count === false) {
+
+        try {
+            $cache = Factory::getCache('numistr_api', 'file');
+            $count = $cache->get($key);
+
+            if ($count === false || $count === null) {
+                return $maxRequests;
+            }
+
+            return max(0, $maxRequests - $count);
+        } catch (\Exception $e) {
             return $maxRequests;
         }
-        
-        return max(0, $maxRequests - $count);
     }
     
     /**

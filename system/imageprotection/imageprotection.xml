@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>PLG_SYSTEM_IMAGEPROTECTION</name>
+    <author>NumisTR</author>
+    <creationDate>2025-01</creationDate>
+    <copyright>Copyright (C) 2025 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_IMAGEPROTECTION_DESC</description>
+
+    <files>
+        <filename plugin="imageprotection">imageprotection.php</filename>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_system_imageprotection.ini</language>
+        <language tag="en-GB">en-GB/plg_system_imageprotection.sys.ini</language>
+        <language tag="tr-TR">tr-TR/plg_system_imageprotection.ini</language>
+        <language tag="tr-TR">tr-TR/plg_system_imageprotection.sys.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field
+                    name="enabled"
+                    type="radio"
+                    label="PLG_SYSTEM_IMAGEPROTECTION_ENABLED_LABEL"
+                    description="PLG_SYSTEM_IMAGEPROTECTION_ENABLED_DESC"
+                    default="1"
+                    class="btn-group btn-group-yesno">
+                    <option value="1">JYES</option>
+                    <option value="0">JNO</option>
+                </field>
+            </fieldset>
+        </fields>
+    </config>
+</extension>

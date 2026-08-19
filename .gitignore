@@ -1,0 +1,5 @@
+# Sunucu sırları — asla commit edilmez (şablon: secrets.example.php)
+webservices/numistr/config/secrets.php
+
+# Build/deploy arşivleri
+*.tar

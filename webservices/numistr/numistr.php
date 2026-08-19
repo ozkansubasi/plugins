@@ -6,11 +6,46 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\User\User;
 
-// Helper sınıflarını yükle
+// Helper sınıflarını yükle (temel)
 require_once __DIR__ . '/helpers/AuthHelper.php';
+
+// JWT doğrulayıcı (Auth0 imza kontrolü) — yoksa AuthHelper log_only'ye düşer
+if (file_exists(__DIR__ . '/helpers/JwtHelper.php')) {
+    require_once __DIR__ . '/helpers/JwtHelper.php';
+}
+
 require_once __DIR__ . '/helpers/DatabaseHelper.php';
 require_once __DIR__ . '/helpers/ResponseHelper.php';
 require_once __DIR__ . '/helpers/RateLimiter.php';
+require_once __DIR__ . '/helpers/TickerHelper.php';
+
+// Locations helper (optional - locations feature not fully deployed yet)
+if (file_exists(__DIR__ . '/helpers/LocationsHelper.php')) {
+    require_once __DIR__ . '/helpers/LocationsHelper.php';
+}
+
+// ---- Recognition helpers (optional - loaded on demand) ----
+// Load only if files exist
+if (file_exists(__DIR__ . '/helpers/QuotaHelper.php')) {
+    require_once __DIR__ . '/helpers/QuotaHelper.php';
+}
+if (file_exists(__DIR__ . '/helpers/AiServiceHelper.php')) {
+    require_once __DIR__ . '/helpers/AiServiceHelper.php';
+}
+if (file_exists(__DIR__ . '/controllers/RecognitionController.php')) {
+    require_once __DIR__ . '/controllers/RecognitionController.php';
+}
+if (file_exists(__DIR__ . '/helpers/UniversityApplicationHelper.php')) {
+    require_once __DIR__ . '/helpers/UniversityApplicationHelper.php';
+}
+
+// ---- Billing (RevenueCat webhook) - optional ----
+if (file_exists(__DIR__ . '/helpers/MembershipHelper.php')) {
+    require_once __DIR__ . '/helpers/MembershipHelper.php';
+}
+if (file_exists(__DIR__ . '/controllers/BillingController.php')) {
+    require_once __DIR__ . '/controllers/BillingController.php';
+}
 
 class PlgWebservicesNumistr extends CMSPlugin
 {
@@ -90,6 +125,31 @@ class PlgWebservicesNumistr extends CMSPlugin
         $app = Factory::getApplication();
         $uri = $_SERVER['REQUEST_URI'] ?? '';
         $this->dbg('entry', $uri);
+		
+		// ---- Recognition
+		if (strpos($uri, '/v1/recognize') !== false) {
+		  RecognitionController::recognize();
+		  return;
+		}
+
+        // ===================== BILLING: /v1/billing/revenuecat ==============
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/billing/revenuecat(?:[/?#;]|$)~', $uri)) {
+            $this->dbg('billing-revenuecat', $uri);
+
+            if (!class_exists('BillingController')) {
+                $this->responseHelper->sendError(503, 'Service Unavailable', 'Billing controller not deployed');
+                return;
+            }
+
+            BillingController::revenueCatWebhook();
+            return;
+        }
+
+        // ===================== TICKER: /v1/ticker ===========================
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/ticker(?:[/?#;]|$)~', $uri)) {
+            $this->handleTicker($uri);
+            return;
+        }
 
         // ===================== PING ========================================
         if (strpos($uri, '/v1/ping') !== false) {
@@ -113,6 +173,24 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== REGIONS LIST: /v1/regions ===================
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/regions(?:[/?#;]|$)~', $uri)) {
             $this->handleRegions($uri);
+            return;
+        }
+
+        // ===================== LOCATIONS IMPORT (admin): POST /v1/locations/import =
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/locations/import(?:[/?#;]|$)~', $uri)) {
+            $this->handleLocationsImport($uri);
+            return;
+        }
+
+        // ===================== LOCATION DETAIL: /v1/locations/{loc_id} =====
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/locations/([^/?#;]+)(?:[/?#;]|$)~', $uri, $m)) {
+            $this->handleLocationDetail($uri, $m[1]);
+            return;
+        }
+
+        // ===================== LOCATIONS BBOX LIST: /v1/locations ==========
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/locations(?:[/?#;]|$)~', $uri)) {
+            $this->handleLocations($uri);
             return;
         }
 
@@ -146,15 +224,34 @@ class PlgWebservicesNumistr extends CMSPlugin
             return;
         }
 
-        // ===================== RECOGNITION: /v1/recognize (MOCK) ===========
-        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/recognize(?:[/?#;]|$)~', $uri)) {
-            $this->handleRecognition($uri);
-            return;
-        }
-
         // ===================== SCAN QUOTA: /v1/user/scan-quota =============
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/scan-quota(?:[/?#;]|$)~', $uri)) {
             $this->handleScanQuota($uri);
+            return;
+        }
+
+        // ===================== UNIVERSITY APPLICATION: /v1/university-application ======
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/university-application(?:[/?#;]|$)~', $uri)) {
+            $this->handleUniversityApplication($uri);
+            return;
+        }
+
+        // ===================== ARTICLES: /v1/articles ======================
+        // Featured article (daily rotation)
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/articles/featured(?:[/?#;]|$)~', $uri)) {
+            $this->handleArticlesFeatured($uri);
+            return;
+        }
+
+        // Blog categories
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/articles/categories(?:[/?#;]|$)~', $uri)) {
+            $this->handleArticlesCategories($uri);
+            return;
+        }
+
+        // Article detail
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/articles/([^/?#;]+)(?:[/?#;]|$)~', $uri, $m)) {
+            $this->handleArticleDetail($uri, (int)$m[1]);
             return;
         }
 
@@ -300,6 +397,163 @@ class PlgWebservicesNumistr extends CMSPlugin
     }
 
     /**
+     * GET /v1/locations
+     * Lightweight map pins inside a bounding box.
+     *
+     * Params (either style):
+     *   - bbox=swLat,swLng,neLat,neLng
+     *   - ne_lat, ne_lng, sw_lat, sw_lng   (legacy get_points.php compatible)
+     *   - lang=tr|en (default tr), limit (max 5000), only_coins=1, region={code}
+     */
+    private function handleLocations(string $uri): void
+    {
+        $this->dbg('locations-list', $uri);
+
+        $this->checkRateLimit('locations', $this->config['RATE_LIMITS']['default'] ?? 60);
+
+        try {
+            $app  = Factory::getApplication();
+            $lang = ($app->input->getString('lang', 'tr') === 'en') ? 'en' : 'tr';
+
+            // Parse bbox (comma form takes precedence, else ne_/sw_ params)
+            $swLat = $swLng = $neLat = $neLng = null;
+            $bbox = trim((string)$app->input->getString('bbox', ''));
+            if ($bbox !== '') {
+                $p = array_map('trim', explode(',', $bbox));
+                if (count($p) === 4) {
+                    [$swLat, $swLng, $neLat, $neLng] = [(float)$p[0], (float)$p[1], (float)$p[2], (float)$p[3]];
+                }
+            } else {
+                $neLat = (float)$app->input->get('ne_lat', 0, 'FLOAT');
+                $neLng = (float)$app->input->get('ne_lng', 0, 'FLOAT');
+                $swLat = (float)$app->input->get('sw_lat', 0, 'FLOAT');
+                $swLng = (float)$app->input->get('sw_lng', 0, 'FLOAT');
+            }
+
+            if (!$swLat || !$swLng || !$neLat || !$neLng) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'bbox required: bbox=swLat,swLng,neLat,neLng (or ne_/sw_ params)');
+                return;
+            }
+            // Normalize swapped corners
+            if ($swLat > $neLat) { [$swLat, $neLat] = [$neLat, $swLat]; }
+            if ($swLng > $neLng) { [$swLng, $neLng] = [$neLng, $swLng]; }
+
+            $opts = [
+                'limit'      => (int)$app->input->get('limit', 2000, 'INT'),
+                'only_coins' => filter_var($app->input->getString('only_coins', '0'), FILTER_VALIDATE_BOOLEAN),
+                'region'     => trim((string)$app->input->getString('region', '')),
+            ];
+
+            $helper = new NumisTRLocationsHelper($this->config);
+            $pins = $helper->getByBbox($swLat, $swLng, $neLat, $neLng, $lang, $opts);
+
+            $this->responseHelper->sendJson([
+                'data' => $pins,
+                'meta' => ['count' => count($pins), 'lang' => $lang],
+            ]);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Unable to fetch locations');
+        }
+    }
+
+    /**
+     * GET /v1/locations/{loc_id}
+     * Full content for a single ancient settlement (e.g. LOC-0017), language-aware.
+     */
+    private function handleLocationDetail(string $uri, string $locId): void
+    {
+        $this->dbg('locations-detail', $uri);
+
+        $this->checkRateLimit('locations', $this->config['RATE_LIMITS']['default'] ?? 60);
+
+        try {
+            $app  = Factory::getApplication();
+            $lang = ($app->input->getString('lang', 'tr') === 'en') ? 'en' : 'tr';
+
+            $locId = strtoupper(trim($locId));
+            if (!preg_match('/^LOC-\d{1,6}$/', $locId)) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Invalid location id (expected LOC-NNNN)');
+                return;
+            }
+
+            $helper = new NumisTRLocationsHelper($this->config);
+            $detail = $helper->getDetail($locId, $lang);
+
+            if ($detail === null) {
+                $this->responseHelper->sendError(404, 'Resource not found');
+                return;
+            }
+
+            $this->responseHelper->sendJson(['data' => $detail]);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Unable to fetch location');
+        }
+    }
+
+    /**
+     * POST /v1/locations/import   (admin only — Super User token)
+     * Batch upsert of ancient-settlement rows by loc_id.
+     * Body (JSON): { "rows": [ { "loc_id": "LOC-0017", "name_tr": "...", ... }, ... ] }
+     * Used by the n8n consolidation workflow to push TR+EN content into `locations`.
+     */
+    private function handleLocationsImport(string $uri): void
+    {
+        $this->dbg('locations-import', $uri);
+
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->responseHelper->sendError(405, 'Method Not Allowed', 'Use POST');
+            return;
+        }
+
+        $user = $this->requireAuth();
+        if (!$user->authorise('core.admin')) {
+            $this->responseHelper->sendError(403, 'Forbidden', 'Admin privileges required');
+            return;
+        }
+
+        try {
+            $raw  = file_get_contents('php://input') ?: '';
+            $body = json_decode($raw, true);
+            $rows = $body['rows'] ?? (is_array($body) ? $body : null);
+
+            if (!is_array($rows) || empty($rows)) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'JSON body must contain a non-empty "rows" array');
+                return;
+            }
+            if (count($rows) > 200) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Max 200 rows per batch');
+                return;
+            }
+
+            $helper = new NumisTRLocationsHelper($this->config);
+            $inserted = 0; $updated = 0; $errors = [];
+
+            foreach ($rows as $i => $row) {
+                try {
+                    $res = $helper->upsert((array)$row);
+                    if ($res === 'inserted') { $inserted++; } else { $updated++; }
+                } catch (\Throwable $e) {
+                    $errors[] = ['index' => $i, 'loc_id' => $row['loc_id'] ?? null, 'error' => $e->getMessage()];
+                }
+            }
+
+            $this->responseHelper->sendJson([
+                'data' => [
+                    'inserted' => $inserted,
+                    'updated'  => $updated,
+                    'failed'   => count($errors),
+                    'errors'   => $errors,
+                ],
+            ]);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Import failed');
+        }
+    }
+
+    /**
      * GET /v1/materials
      */
     private function handleMaterials(string $uri): void
@@ -368,7 +622,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                     INNER JOIN " . $db->quoteName('#__content', 'ct') . " 
                         ON ct.id = v.article_id
                     LEFT JOIN " . $db->quoteName($fvTableName, 'fv') . "
-                        ON CAST(fv.item_id AS UNSIGNED) = v.article_id 
+                        ON fv.item_id = CAST(v.article_id AS CHAR) COLLATE utf8mb4_unicode_ci
                         AND fv.field_id = " . (int)$mintFieldId . "
                     WHERE ct.catid IN (" . $allowedCatIdsSql . ")
                         AND ct.state = 1
@@ -401,6 +655,76 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         } catch (\Throwable $e) {
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * GET /v1/ticker
+     * News ticker endpoint for mint names and regional content
+     *
+     * Query Parameters:
+     *   - category: Category alias (default: 'darphane-isimleri')
+     *   - region: Region code filter (default: 'all')
+     *   - limit: Number of items (default: 50, max: 200)
+     *   - random: Randomize order (default: true)
+     */
+    private function handleTicker(string $uri): void
+    {
+        $this->dbg('ticker', $uri);
+
+        // Rate limiting - Ticker endpoint için özel limit
+        $this->checkRateLimit('ticker', $this->config['RATE_LIMITS']['default']);
+
+        try {
+            // Query parametrelerini al
+            // category_id varsa onu kullan, yoksa varsayılan 46 (Ticker Info kategorisi)
+            $categoryId = isset($_GET['category_id']) ? (int) $_GET['category_id'] : 46;
+            $categoryAlias = $_GET['category'] ?? null;
+            $region = $_GET['region'] ?? 'all';
+            $language = $_GET['language'] ?? '*'; // Language filter: tr-TR, en-GB, or * for all
+            $limit = min((int) ($_GET['limit'] ?? 50), 200); // Max 200 items
+            $random = isset($_GET['random']) ? filter_var($_GET['random'], FILTER_VALIDATE_BOOLEAN) : true;
+            $debug = isset($_GET['debug']) ? filter_var($_GET['debug'], FILTER_VALIDATE_BOOLEAN) : false;
+
+            // TickerHelper'ı başlat
+            $tickerHelper = new NumisTRTickerHelper($this->config);
+
+            // Ticker items'ları getir
+            $items = $tickerHelper->getTickerItems([
+                'category_id' => $categoryId,
+                'category_alias' => $categoryAlias,
+                'region' => $region,
+                'language' => $language,
+                'limit' => $limit,
+                'random' => $random,
+                'cache' => 3600, // 1 hour cache
+                'debug' => $debug
+            ]);
+
+            // Response formatla
+            $response = [
+                'data' => [
+                    'items' => $items,
+                    'count' => count($items),
+                    'region' => $region,
+                    'language' => $language,
+                    'category' => $categoryAlias,
+                    'randomized' => $random
+                ],
+                'meta' => [
+                    'total_available' => count($items),
+                    'limit_applied' => $limit
+                ]
+            ];
+
+            $this->responseHelper->sendJson($response);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(
+                500,
+                'Ticker error',
+                $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Unable to fetch ticker data'
+            );
         }
     }
 
@@ -485,9 +809,9 @@ class PlgWebservicesNumistr extends CMSPlugin
             // Joins
             if ($materialF !== '' && $matFieldId !== null) {
                 $q->select($db->quoteName('fv_mat.value', 'material_value'))
-                  ->join('LEFT', $fvTbl('fv_mat') . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                  ->join('LEFT', $fvTbl('fv_mat') . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_mat.field_id') . ' = ' . (int)$matFieldId);
-                $qCount->join('LEFT', $fvTbl('fv_mat') . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                $qCount->join('LEFT', $fvTbl('fv_mat') . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_mat.field_id') . ' = ' . (int)$matFieldId);
             } else { 
                 $q->select('NULL AS ' . $db->quoteName('material_value')); 
@@ -495,9 +819,9 @@ class PlgWebservicesNumistr extends CMSPlugin
 
             if ($mintF !== '' && $mintFieldId !== null) {
                 $q->select($db->quoteName('fv_mint.value', 'mint_value'))
-                  ->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                  ->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_mint.field_id') . ' = ' . (int)$mintFieldId);
-                $qCount->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                $qCount->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_mint.field_id') . ' = ' . (int)$mintFieldId);
             } else { 
                 $q->select('NULL AS ' . $db->quoteName('mint_value')); 
@@ -505,9 +829,9 @@ class PlgWebservicesNumistr extends CMSPlugin
 
             if ($authorityF !== '' && $authFieldId !== null) {
                 $q->select($db->quoteName('fv_auth.value', 'authority_value'))
-                  ->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                  ->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int)$authFieldId);
-                $qCount->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                $qCount->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int)$authFieldId);
             } else { 
                 $q->select('NULL AS ' . $db->quoteName('authority_value')); 
@@ -615,15 +939,15 @@ class PlgWebservicesNumistr extends CMSPlugin
                     . ' AND ' . $db->quoteName('ct.state') . ' = 1');
 
             if ($matFieldId !== null) {
-                $qBase->join('LEFT', $fvTbl('fv_mat') . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                $qBase->join('LEFT', $fvTbl('fv_mat') . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_mat.field_id') . ' = ' . (int)$matFieldId);
             }
             if ($mintFieldId !== null) {
-                $qBase->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                $qBase->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_mint.field_id') . ' = ' . (int)$mintFieldId);
             }
             if ($authFieldId !== null) {
-                $qBase->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = ' . $db->quoteName('v.article_id') 
+                $qBase->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci' 
                     . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int)$authFieldId);
             }
 
@@ -703,7 +1027,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                     . ' AND ' . $db->quoteName('ct.state') . ' = 1');
             
             if ($mintFieldId !== null) {
-                $q->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = ' . $db->quoteName('v.article_id')
+                $q->join('LEFT', $fvTbl('fv_mint') . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                     . ' AND ' . $db->quoteName('fv_mint.field_id') . ' = ' . (int)$mintFieldId);
             }
             
@@ -772,7 +1096,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                     . ' AND ' . $db->quoteName('ct.state') . ' = 1');
             
             if ($authFieldId !== null) {
-                $q->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = ' . $db->quoteName('v.article_id')
+                $q->join('LEFT', $fvTbl('fv_auth') . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                     . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int)$authFieldId);
             }
             
@@ -878,8 +1202,10 @@ class PlgWebservicesNumistr extends CMSPlugin
             $authFieldId = $this->dbHelper->fid('authority_name');
             $dateFromFieldId = $this->dbHelper->fid('start_date');       // ✅ Düzeltildi
             $dateToFieldId = $this->dbHelper->fid('end_date');           // ✅ Düzeltildi
-            $obverseFieldId = $this->dbHelper->fid('obverse_desc_tr');   // ✅ Türkçe tercih
-            $reverseFieldId = $this->dbHelper->fid('reverse_desc_tr');   // ✅ Türkçe tercih
+            $obverseTrFieldId = $this->dbHelper->fid('obverse_desc_tr'); // ✅ Türkçe
+            $reverseTrFieldId = $this->dbHelper->fid('reverse_desc_tr'); // ✅ Türkçe
+            $obverseEnFieldId = $this->dbHelper->fid('obverse_desc');     // ✅ İngilizce
+            $reverseEnFieldId = $this->dbHelper->fid('reverse_desc');     // ✅ İngilizce
             $coordsFieldId = $this->dbHelper->fid('coordinates');        // ✅ Tek field
 
             $q = $db->getQuery(true)
@@ -893,7 +1219,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             if ($matFieldId !== null) {
                 $q->select($db->quoteName('fv_mat.value', 'material_value'))
                   ->join('LEFT', $db->quoteName($fvTableName, 'fv_mat')
-                      . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = ' . $db->quoteName('v.article_id')
+                      . ' ON ' . $db->quoteName('fv_mat.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                       . ' AND ' . $db->quoteName('fv_mat.field_id') . ' = ' . (int)$matFieldId);
             } else {
                 $q->select('NULL AS ' . $db->quoteName('material_value'));
@@ -902,7 +1228,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             if ($mintFieldId !== null) {
                 $q->select($db->quoteName('fv_mint.value', 'mint_value'))
                   ->join('LEFT', $db->quoteName($fvTableName, 'fv_mint')
-                      . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = ' . $db->quoteName('v.article_id')
+                      . ' ON ' . $db->quoteName('fv_mint.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                       . ' AND ' . $db->quoteName('fv_mint.field_id') . ' = ' . (int)$mintFieldId);
             } else {
                 $q->select('NULL AS ' . $db->quoteName('mint_value'));
@@ -911,7 +1237,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             if ($authFieldId !== null) {
                 $q->select($db->quoteName('fv_auth.value', 'authority_value'))
                   ->join('LEFT', $db->quoteName($fvTableName, 'fv_auth')
-                      . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = ' . $db->quoteName('v.article_id')
+                      . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                       . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int)$authFieldId);
             } else {
                 $q->select('NULL AS ' . $db->quoteName('authority_value'));
@@ -920,7 +1246,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             if ($dateFromFieldId !== null) {
                 $q->select($db->quoteName('fv_dfrom.value', 'date_from_value'))
                   ->join('LEFT', $db->quoteName($fvTableName, 'fv_dfrom')
-                      . ' ON ' . $db->quoteName('fv_dfrom.item_id') . ' = ' . $db->quoteName('v.article_id')
+                      . ' ON ' . $db->quoteName('fv_dfrom.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                       . ' AND ' . $db->quoteName('fv_dfrom.field_id') . ' = ' . (int)$dateFromFieldId);
             } else {
                 $q->select('NULL AS ' . $db->quoteName('date_from_value'));
@@ -929,34 +1255,56 @@ class PlgWebservicesNumistr extends CMSPlugin
             if ($dateToFieldId !== null) {
                 $q->select($db->quoteName('fv_dto.value', 'date_to_value'))
                   ->join('LEFT', $db->quoteName($fvTableName, 'fv_dto')
-                      . ' ON ' . $db->quoteName('fv_dto.item_id') . ' = ' . $db->quoteName('v.article_id')
+                      . ' ON ' . $db->quoteName('fv_dto.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                       . ' AND ' . $db->quoteName('fv_dto.field_id') . ' = ' . (int)$dateToFieldId);
             } else {
                 $q->select('NULL AS ' . $db->quoteName('date_to_value'));
             }
 
-            if ($obverseFieldId !== null) {
-                $q->select($db->quoteName('fv_obv.value', 'obverse_value'))
-                  ->join('LEFT', $db->quoteName($fvTableName, 'fv_obv')
-                      . ' ON ' . $db->quoteName('fv_obv.item_id') . ' = ' . $db->quoteName('v.article_id')
-                      . ' AND ' . $db->quoteName('fv_obv.field_id') . ' = ' . (int)$obverseFieldId);
+            // ✅ Obverse TR
+            if ($obverseTrFieldId !== null) {
+                $q->select($db->quoteName('fv_obv_tr.value', 'obverse_tr_value'))
+                  ->join('LEFT', $db->quoteName($fvTableName, 'fv_obv_tr')
+                      . ' ON ' . $db->quoteName('fv_obv_tr.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
+                      . ' AND ' . $db->quoteName('fv_obv_tr.field_id') . ' = ' . (int)$obverseTrFieldId);
             } else {
-                $q->select('NULL AS ' . $db->quoteName('obverse_value'));
+                $q->select('NULL AS ' . $db->quoteName('obverse_tr_value'));
             }
 
-            if ($reverseFieldId !== null) {
-                $q->select($db->quoteName('fv_rev.value', 'reverse_value'))
-                  ->join('LEFT', $db->quoteName($fvTableName, 'fv_rev')
-                      . ' ON ' . $db->quoteName('fv_rev.item_id') . ' = ' . $db->quoteName('v.article_id')
-                      . ' AND ' . $db->quoteName('fv_rev.field_id') . ' = ' . (int)$reverseFieldId);
+            // ✅ Reverse TR
+            if ($reverseTrFieldId !== null) {
+                $q->select($db->quoteName('fv_rev_tr.value', 'reverse_tr_value'))
+                  ->join('LEFT', $db->quoteName($fvTableName, 'fv_rev_tr')
+                      . ' ON ' . $db->quoteName('fv_rev_tr.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
+                      . ' AND ' . $db->quoteName('fv_rev_tr.field_id') . ' = ' . (int)$reverseTrFieldId);
             } else {
-                $q->select('NULL AS ' . $db->quoteName('reverse_value'));
+                $q->select('NULL AS ' . $db->quoteName('reverse_tr_value'));
+            }
+
+            // ✅ Obverse EN
+            if ($obverseEnFieldId !== null) {
+                $q->select($db->quoteName('fv_obv_en.value', 'obverse_en_value'))
+                  ->join('LEFT', $db->quoteName($fvTableName, 'fv_obv_en')
+                      . ' ON ' . $db->quoteName('fv_obv_en.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
+                      . ' AND ' . $db->quoteName('fv_obv_en.field_id') . ' = ' . (int)$obverseEnFieldId);
+            } else {
+                $q->select('NULL AS ' . $db->quoteName('obverse_en_value'));
+            }
+
+            // ✅ Reverse EN
+            if ($reverseEnFieldId !== null) {
+                $q->select($db->quoteName('fv_rev_en.value', 'reverse_en_value'))
+                  ->join('LEFT', $db->quoteName($fvTableName, 'fv_rev_en')
+                      . ' ON ' . $db->quoteName('fv_rev_en.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
+                      . ' AND ' . $db->quoteName('fv_rev_en.field_id') . ' = ' . (int)$reverseEnFieldId);
+            } else {
+                $q->select('NULL AS ' . $db->quoteName('reverse_en_value'));
             }
 
             if ($coordsFieldId !== null) {
                 $q->select($db->quoteName('fv_coords.value', 'coordinates_value'))
                   ->join('LEFT', $db->quoteName($fvTableName, 'fv_coords')
-                      . ' ON ' . $db->quoteName('fv_coords.item_id') . ' = ' . $db->quoteName('v.article_id')
+                      . ' ON ' . $db->quoteName('fv_coords.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
                       . ' AND ' . $db->quoteName('fv_coords.field_id') . ' = ' . (int)$coordsFieldId);
             } else {
                 $q->select('NULL AS ' . $db->quoteName('coordinates_value'));
@@ -1029,8 +1377,10 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'mint' => $r['mint_value'] ?? $r['mint_name'] ?? null,
                 'latitude' => $latitude,
                 'longitude' => $longitude,
-                'obverse_desc' => $r['obverse_value'] ?? $r['obverse_desc_tr'] ?? $r['obverse_desc'] ?? null,
-                'reverse_desc' => $r['reverse_value'] ?? $r['reverse_desc_tr'] ?? $r['reverse_desc'] ?? null,
+                'obverse_desc_tr' => $r['obverse_tr_value'] ?? $r['obverse_desc_tr'] ?? null,
+                'obverse_desc' => $r['obverse_en_value'] ?? $r['obverse_desc'] ?? null,
+                'reverse_desc_tr' => $r['reverse_tr_value'] ?? $r['reverse_desc_tr'] ?? null,
+                'reverse_desc' => $r['reverse_en_value'] ?? $r['reverse_desc'] ?? null,
                 'weight' => $r['weight_nominal'] ?? null,
                 'diameter' => $r['diameter_nominal'] ?? null,
             ];
@@ -1331,6 +1681,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 $db->quoteName('ci.weight'),
                 $db->quoteName('ci.diameter'),
                 $db->quoteName('ci.ordering'),
+                $db->quoteName('ci.remote_url'),
             ])
             ->from($imgTbl)
             ->where($db->quoteName('ci.coin_id') . ' = ' . (int)$variantId)
@@ -1338,10 +1689,36 @@ class PlgWebservicesNumistr extends CMSPlugin
         $db->setQuery($q);
         $rows = $db->loadAssocList() ?: [];
 
+        // Web sitesi mantığı: sikke-gorsel-url custom field'inden doğru URL'i al
+        $customImageUrl = null;
+        try {
+            $q2 = $db->getQuery(true)
+                ->select($db->quoteName('v.value'))
+                ->from($db->quoteName('#__fields', 'f'))
+                ->join('INNER', $db->quoteName('#__fields_values', 'v') . ' ON ' . $db->quoteName('v.field_id') . ' = ' . $db->quoteName('f.id'))
+                ->where($db->quoteName('f.name') . ' = ' . $db->quote('sikke-gorsel-url'))
+                ->where($db->quoteName('v.item_id') . ' = ' . (int)$variantId)
+                ->setLimit(1);
+            $db->setQuery($q2);
+            $cv = trim((string)$db->loadResult());
+            if ($cv !== '' && preg_match('~^https?://~i', $cv) && stripos($cv, 'option=com_numistr') === false) {
+                $customImageUrl = $cv;
+            }
+        } catch (\Throwable $e) {
+            // Hata varsa sessizce devam et
+        }
+
         $data = [];
-        foreach ($rows as $r) {
+        foreach ($rows as $idx => $r) {
             $imageId = (int)($r['image_id'] ?? 0);
             if ($imageId <= 0) { continue; }
+
+            // İlk görselde sikke-gorsel-url varsa remote_url olarak kullan (web sitesi mantığı)
+            $remoteUrl = $r['remote_url'] ?? null;
+            if ($idx === 0 && !empty($customImageUrl)) {
+                $remoteUrl = $customImageUrl;
+            }
+
             $item = [
                 'image_id' => $imageId,
                 'variant_id' => (int)($r['coin_id'] ?? $variantId),
@@ -1351,6 +1728,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'ordering' => isset($r['ordering']) ? (int)$r['ordering'] : null,
                 'url' => $this->buildImageUrl($imageId, $wmPref, $abs),
                 'url_raw' => $this->buildImageUrl($imageId, 0, $abs),
+                'remote_url' => $remoteUrl,
             ];
             $data[] = $item;
         }
@@ -1358,8 +1736,15 @@ class PlgWebservicesNumistr extends CMSPlugin
     }
 
     /**
-     * POST /v1/recognize (MOCK - Phase 1)
-     * Mock coin recognition endpoint for testing
+     * POST /v1/recognize
+     * AI-powered coin recognition with quota management
+     * Proxies to AI Service and manages scan quotas
+     *
+     * ⚠️ DEAD CODE — hiçbir yerden çağrılmıyor. /v1/recognize route'u
+     * onBeforeApiRoute() içinde RecognitionController::recognize()'a gidiyor.
+     * Buradaki quota sorguları eski şemaya (is_pro kolonu, prefix'siz tablo)
+     * göre yazılmış; canlı davranış için RecognitionController + QuotaHelper'a bak.
+     * Thumbnail zenginleştirme örneği olarak tutuluyor; ileride temizlenebilir.
      */
     private function handleRecognition(string $uri): void
     {
@@ -1390,21 +1775,24 @@ class PlgWebservicesNumistr extends CMSPlugin
                 return;
             }
 
-            // Validate file size (max 5MB)
+            // Validate file size (max 10MB - increased for high-res photos)
             $fileSize = $files['size'] ?? 0;
-            if ($fileSize > 5 * 1024 * 1024) {
-                $this->responseHelper->sendError(400, 'Bad Request', 'Image too large. Maximum 5MB allowed.');
+            if ($fileSize > 10 * 1024 * 1024) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Image too large. Maximum 10MB allowed.');
                 return;
             }
 
             // Check scan quota
             $isPro = $this->authHelper->hasProSubscription($user);
             $currentMonth = date('Y-m');
+            $quotaConfig = $this->config['QUOTA'] ?? ['free_limit' => 10, 'pro_limit' => -1];
+            $freeLimit = (int)($quotaConfig['free_limit'] ?? 10);
+            $proLimit = (int)($quotaConfig['pro_limit'] ?? -1);
 
             // Get or create quota record
             $quotaQuery = $db->getQuery(true)
                 ->select(['user_id', 'month', 'scans_used', 'is_pro'])
-                ->from($db->quoteName('#__numistr_scan_quota'))
+                ->from($db->quoteName('numistr_scan_quota'))
                 ->where($db->quoteName('user_id') . ' = ' . (int)$user->id)
                 ->where($db->quoteName('month') . ' = ' . $db->quote($currentMonth));
 
@@ -1414,7 +1802,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             if (!$quotaRecord) {
                 // Create new quota record
                 $insertQuery = $db->getQuery(true)
-                    ->insert($db->quoteName('#__numistr_scan_quota'))
+                    ->insert($db->quoteName('numistr_scan_quota'))
                     ->columns([$db->quoteName('user_id'), $db->quoteName('month'), $db->quoteName('scans_used'), $db->quoteName('is_pro')])
                     ->values((int)$user->id . ', ' . $db->quote($currentMonth) . ', 0, ' . (int)$isPro);
                 $db->setQuery($insertQuery);
@@ -1426,7 +1814,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
             // Check quota limit
-            $scanLimit = $isPro ? 999999 : 10; // Pro: unlimited, Free: 10/month
+            $scanLimit = $isPro ? ($proLimit === -1 ? 999999 : $proLimit) : $freeLimit;
             $remaining = $scanLimit - $scansUsed;
 
             if ($remaining <= 0 && !$isPro) {
@@ -1434,93 +1822,138 @@ class PlgWebservicesNumistr extends CMSPlugin
                 return;
             }
 
-            // Increment scan count
+            // === PROXY TO AI SERVICE ===
+            $aiConfig = $this->config['AI_SERVICE'] ?? [];
+            $aiServiceUrl = $aiConfig['url'] ?? 'https://ai.numistr.org';
+            $aiTimeout = $aiConfig['timeout'] ?? 30;
+            $verifySsl = $aiConfig['verify_ssl'] ?? true;
+
+            // Read image file
+            $imageData = file_get_contents($files['tmp_name']);
+            if ($imageData === false) {
+                $this->responseHelper->sendError(500, 'Internal Error', 'Failed to read uploaded image');
+                return;
+            }
+
+            // Check for optional reverse image
+            $reverseFiles = $app->input->files->get('reverse');
+            $reverseData = null;
+            if ($reverseFiles && isset($reverseFiles['tmp_name']) && is_uploaded_file($reverseFiles['tmp_name'])) {
+                $reverseData = file_get_contents($reverseFiles['tmp_name']);
+            }
+
+            // Build multipart request to AI Service
+            $boundary = 'NumisTR' . uniqid();
+            $body = '';
+
+            // Add obverse image
+            $body .= "--{$boundary}\r\n";
+            $body .= "Content-Disposition: form-data; name=\"image\"; filename=\"obverse.jpg\"\r\n";
+            $body .= "Content-Type: image/jpeg\r\n\r\n";
+            $body .= $imageData . "\r\n";
+
+            // Add reverse image if provided
+            if ($reverseData) {
+                $body .= "--{$boundary}\r\n";
+                $body .= "Content-Disposition: form-data; name=\"reverse\"; filename=\"reverse.jpg\"\r\n";
+                $body .= "Content-Type: image/jpeg\r\n\r\n";
+                $body .= $reverseData . "\r\n";
+            }
+
+            $body .= "--{$boundary}--\r\n";
+
+            // Make request to AI Service
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $aiServiceUrl . '/recognize',
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => $body,
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: multipart/form-data; boundary=' . $boundary,
+                    'Accept: application/json',
+                ],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => $aiTimeout,
+                CURLOPT_CONNECTTIMEOUT => 10,
+                CURLOPT_SSL_VERIFYPEER => $verifySsl,
+                CURLOPT_SSL_VERIFYHOST => $verifySsl ? 2 : 0,
+            ]);
+
+            $aiResponse = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($ch);
+            curl_close($ch);
+
+            // Handle AI Service errors
+            if ($aiResponse === false || !empty($curlError)) {
+                $this->dbg('ai-service-error', $curlError);
+                $this->responseHelper->sendError(503, 'AI Service Unavailable', 'Recognition service temporarily unavailable. Please try again later.');
+                return;
+            }
+
+            if ($httpCode !== 200) {
+                $this->dbg('ai-service-http-error', "HTTP {$httpCode}: {$aiResponse}");
+                $this->responseHelper->sendError(502, 'AI Service Error', 'Recognition failed. Please try again.');
+                return;
+            }
+
+            // Parse AI response
+            $aiResult = json_decode($aiResponse, true);
+            if (!$aiResult) {
+                $this->responseHelper->sendError(502, 'AI Service Error', 'Invalid response from recognition service.');
+                return;
+            }
+
+            // === SUCCESS - INCREMENT QUOTA ===
             $updateQuery = $db->getQuery(true)
-                ->update($db->quoteName('#__numistr_scan_quota'))
+                ->update($db->quoteName('numistr_scan_quota'))
                 ->set($db->quoteName('scans_used') . ' = ' . $db->quoteName('scans_used') . ' + 1')
                 ->where($db->quoteName('user_id') . ' = ' . (int)$user->id)
                 ->where($db->quoteName('month') . ' = ' . $db->quote($currentMonth));
             $db->setQuery($updateQuery);
             $db->execute();
 
-            // MOCK RESPONSE - Return random coins from database
-            $allowedCatIds = $this->dbHelper->getAllowedCatIds($db, $this->config['ROOT_CAT_ID']);
-            if (empty($allowedCatIds)) {
-                $this->responseHelper->sendError(500, 'Internal Error', 'No coins available');
-                return;
-            }
-            $allowedCatIdsSql = implode(',', array_map('intval', $allowedCatIds));
-
-            // Get 5 random variants with images
-            $mockQuery = $db->getQuery(true)
-                ->select([
-                    $db->quoteName('v.article_id'),
-                    $db->quoteName('v.title_tr'),
-                    $db->quoteName('v.title_en'),
-                    $db->quoteName('v.region_code'),
-                    $db->quoteName('v.date_from'),
-                    $db->quoteName('v.date_to'),
-                ])
-                ->from($db->quoteName('o_numistr_variants_public', 'v'))
-                ->join('INNER', $db->quoteName('#__content', 'ct') . ' ON ' . $db->quoteName('ct.id') . ' = ' . $db->quoteName('v.article_id'))
-                ->where($db->quoteName('ct.catid') . ' IN (' . $allowedCatIdsSql . ')')
-                ->where($db->quoteName('ct.state') . ' = 1')
-                ->where('EXISTS (SELECT 1 FROM ' . $db->quoteName('coins_images', 'ci') . ' WHERE ' . $db->quoteName('ci.coin_id') . ' = ' . $db->quoteName('v.article_id') . ')')
-                ->order('RAND()')
-                ->setLimit(5);
-
-            $db->setQuery($mockQuery);
-            $mockResults = $db->loadAssocList() ?: [];
-
-            // Build response matches
-            $matches = [];
-            $confidenceBase = 0.85;
-            $confidenceDecrement = 0.10;
-
-            foreach ($mockResults as $index => $result) {
-                $articleId = (int)$result['article_id'];
-                $title = $result['title_tr'] ?: $result['title_en'] ?: 'Unknown';
-                $region = $result['region_code'] ?: null;
-                $dateFrom = $result['date_from'] ?: null;
-                $dateTo = $result['date_to'] ?: null;
-
-                $dateRange = null;
-                if ($dateFrom !== null || $dateTo !== null) {
-                    $dateRange = ($dateFrom ?: '?') . ' - ' . ($dateTo ?: '?');
+            // Enrich AI results with Joomla data (thumbnail URLs)
+            $matches = $aiResult['matches'] ?? [];
+            foreach ($matches as &$match) {
+                $articleId = (int)($match['variant_id'] ?? $match['article_id'] ?? 0);
+                if ($articleId > 0) {
+                    // Get thumbnail URL from Joomla
+                    $images = $this->getVariantImages($db, $articleId, 0, 1);
+                    $match['thumbnail_url'] = !empty($images) ? $images[0]['url'] : null;
+                    $match['article_id'] = $articleId;
                 }
-
-                // Get first image
-                $images = $this->getVariantImages($db, $articleId, 0, 1);
-                $thumbnailUrl = !empty($images) ? $images[0]['url'] : null;
-
-                $confidence = max(0.50, $confidenceBase - ($index * $confidenceDecrement));
-
-                $matches[] = [
-                    'article_id' => $articleId,
-                    'title' => $title,
-                    'confidence' => round($confidence, 2),
-                    'region' => $region,
-                    'date_range' => $dateRange,
-                    'thumbnail_url' => $thumbnailUrl,
-                    'explanation' => 'Mock match #' . ($index + 1) . ' - Visual similarity detected',
-                ];
             }
+            unset($match);
 
+            // Calculate reset date
+            $resetDate = date('Y-m-01', strtotime('first day of next month'));
+
+            // Build final response with quota info
             $payload = [
                 'matches' => $matches,
-                'remaining_scans' => max(0, $remaining - 1),
-                'message' => 'Recognition successful (MOCK DATA - Phase 1)',
+                'processing_time_ms' => $aiResult['processing_time_ms'] ?? null,
+                'ocr_text' => $aiResult['ocr_text'] ?? null,
+                'quota' => [
+                    'scans_used' => $scansUsed + 1,
+                    'scan_limit' => $isPro ? -1 : $freeLimit,
+                    'remaining' => $isPro ? -1 : max(0, $remaining - 1),
+                    'is_pro' => $isPro,
+                    'reset_date' => $resetDate,
+                ],
             ];
 
             $this->responseHelper->sendJson($payload);
 
         } catch (\Throwable $e) {
+            $this->dbg('recognition-exception', $e->getMessage());
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
         }
     }
 
     /**
      * GET /v1/user/scan-quota
+     * Returns user's current scan quota status
      */
     private function handleScanQuota(string $uri): void
     {
@@ -1534,10 +1967,16 @@ class PlgWebservicesNumistr extends CMSPlugin
             $isPro = $this->authHelper->hasProSubscription($user);
             $currentMonth = date('Y-m');
 
-            // Get quota record
+            // Get quota config from constants
+            $quotaConfig = $this->config['QUOTA'] ?? ['free_limit' => 10, 'pro_limit' => -1];
+            $freeLimit = (int)($quotaConfig['free_limit'] ?? 10);
+            $proLimit = (int)($quotaConfig['pro_limit'] ?? -1);
+
+            // Get quota record (is_pro her zaman grup üyeliğinden hesaplanır; tablodaki
+            // is_pro kolonu yalnızca aylık geçmiş kaydıdır, karar için kullanılmaz)
             $quotaQuery = $db->getQuery(true)
-                ->select(['scans_used', 'is_pro'])
-                ->from($db->quoteName('#__numistr_scan_quota'))
+                ->select($db->quoteName('scans_used'))
+                ->from($db->quoteName('numistr_scan_quota'))
                 ->where($db->quoteName('user_id') . ' = ' . (int)$user->id)
                 ->where($db->quoteName('month') . ' = ' . $db->quote($currentMonth));
 
@@ -1545,16 +1984,292 @@ class PlgWebservicesNumistr extends CMSPlugin
             $quotaRecord = $db->loadAssoc();
 
             $scansUsed = $quotaRecord ? (int)$quotaRecord['scans_used'] : 0;
-            $scanLimit = $isPro ? 999999 : 10;
+            $scanLimit = $isPro ? $proLimit : $freeLimit;
+            $remaining = $isPro ? -1 : max(0, $freeLimit - $scansUsed);
 
             // Calculate reset date (first day of next month)
             $resetDate = date('Y-m-01', strtotime('first day of next month'));
 
             $payload = [
                 'scans_used' => $scansUsed,
-                'scan_limit' => $isPro ? -1 : $scanLimit, // -1 means unlimited
+                'scan_limit' => $scanLimit, // -1 means unlimited
+                'remaining' => $remaining,  // -1 means unlimited
                 'is_pro' => $isPro,
                 'reset_date' => $resetDate,
+            ];
+
+            $this->responseHelper->sendJson($payload);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * POST /v1/university-application
+     * Handles university student pro subscription applications
+     */
+    private function handleUniversityApplication(string $uri): void
+    {
+        $this->dbg('university-application', $uri);
+
+        // Only POST method allowed
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        if ($method !== 'POST') {
+            $this->responseHelper->sendError(405, 'Method Not Allowed', 'Only POST method is allowed');
+            return;
+        }
+
+        // Rate limit: 5 applications per hour per IP
+        $this->checkRateLimit('university-application', 5);
+
+        try {
+            $result = UniversityApplicationHelper::processApplication();
+
+            if ($result['success']) {
+                $this->responseHelper->sendJson([
+                    'success' => true,
+                    'message' => $result['message'],
+                    'data' => [
+                        'application_id' => $result['application_id']
+                    ]
+                ]);
+            } else {
+                $this->responseHelper->sendError(
+                    400,
+                    $result['error'],
+                    $result['message']
+                );
+            }
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * GET /v1/articles/featured
+     * Returns daily rotating featured article from blog category (ID=8)
+     */
+    private function handleArticlesFeatured(string $uri): void
+    {
+        $this->dbg('articles-featured', $uri);
+
+        try {
+            $db = Factory::getDbo();
+            $blogCatId = 8; // Blog category ID
+
+            // Get all subcategories of blog category
+            $catQuery = $db->getQuery(true)
+                ->select('id')
+                ->from($db->quoteName('#__categories'))
+                ->where($db->quoteName('parent_id') . ' = ' . (int)$blogCatId)
+                ->where($db->quoteName('published') . ' = 1');
+
+            $db->setQuery($catQuery);
+            $subCatIds = $db->loadColumn() ?: [];
+
+            // Include parent blog category too
+            $allCatIds = array_merge([$blogCatId], $subCatIds);
+
+            if (empty($allCatIds)) {
+                $this->responseHelper->sendError(404, 'No blog categories found');
+                return;
+            }
+
+            $catIdsSql = implode(',', array_map('intval', $allCatIds));
+
+            // Get total count of published articles
+            $countQuery = $db->getQuery(true)
+                ->select('COUNT(*)')
+                ->from($db->quoteName('#__content'))
+                ->where($db->quoteName('catid') . ' IN (' . $catIdsSql . ')')
+                ->where($db->quoteName('state') . ' = 1');
+
+            $db->setQuery($countQuery);
+            $totalArticles = (int)$db->loadResult();
+
+            if ($totalArticles === 0) {
+                $this->responseHelper->sendError(404, 'No articles found');
+                return;
+            }
+
+            // Daily rotation: use date as seed for consistent daily selection
+            $today = date('Y-m-d');
+            $seed = crc32($today);
+            $offset = $seed % $totalArticles;
+
+            // Get the featured article
+            $articleQuery = $db->getQuery(true)
+                ->select([
+                    $db->quoteName('id'),
+                    $db->quoteName('title'),
+                    $db->quoteName('alias'),
+                    $db->quoteName('introtext'),
+                    $db->quoteName('fulltext'),
+                    $db->quoteName('catid'),
+                    $db->quoteName('created'),
+                    $db->quoteName('modified'),
+                ])
+                ->from($db->quoteName('#__content'))
+                ->where($db->quoteName('catid') . ' IN (' . $catIdsSql . ')')
+                ->where($db->quoteName('state') . ' = 1')
+                ->order($db->quoteName('id') . ' ASC')
+                ->setLimit(1, $offset);
+
+            $db->setQuery($articleQuery);
+            $article = $db->loadAssoc();
+
+            if (!$article) {
+                $this->responseHelper->sendError(404, 'Article not found');
+                return;
+            }
+
+            // Get category name
+            $catNameQuery = $db->getQuery(true)
+                ->select('title')
+                ->from($db->quoteName('#__categories'))
+                ->where($db->quoteName('id') . ' = ' . (int)$article['catid']);
+            $db->setQuery($catNameQuery);
+            $categoryName = $db->loadResult() ?: 'Blog';
+
+            // Strip HTML and limit intro text to 150 characters
+            $intro = strip_tags($article['introtext'] ?? '');
+            $intro = mb_substr($intro, 0, 150, 'UTF-8');
+            if (mb_strlen($intro, 'UTF-8') >= 150) {
+                $intro .= '...';
+            }
+
+            $payload = [
+                'data' => [
+                    'id' => (int)$article['id'],
+                    'title' => $article['title'],
+                    'intro' => $intro,
+                    'category' => $categoryName,
+                    'category_id' => (int)$article['catid'],
+                    'created' => $article['created'],
+                ]
+            ];
+
+            $this->responseHelper->sendJson($payload);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * GET /v1/articles/categories
+     * Returns list of blog categories
+     */
+    private function handleArticlesCategories(string $uri): void
+    {
+        $this->dbg('articles-categories', $uri);
+
+        try {
+            $db = Factory::getDbo();
+            $blogCatId = 8; // Blog category ID
+
+            // Get all subcategories
+            $query = $db->getQuery(true)
+                ->select([
+                    $db->quoteName('id'),
+                    $db->quoteName('title'),
+                    $db->quoteName('alias'),
+                    $db->quoteName('description'),
+                ])
+                ->from($db->quoteName('#__categories'))
+                ->where($db->quoteName('parent_id') . ' = ' . (int)$blogCatId)
+                ->where($db->quoteName('published') . ' = 1')
+                ->order($db->quoteName('lft') . ' ASC');
+
+            $db->setQuery($query);
+            $categories = $db->loadAssocList() ?: [];
+
+            $data = array_map(function($cat) {
+                return [
+                    'id' => (int)$cat['id'],
+                    'name' => $cat['title'],
+                    'slug' => $cat['alias'],
+                    'description' => strip_tags($cat['description'] ?? ''),
+                ];
+            }, $categories);
+
+            $this->responseHelper->sendJson(['data' => $data]);
+
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * GET /v1/articles/{id}
+     * Returns full article content
+     */
+    private function handleArticleDetail(string $uri, int $articleId): void
+    {
+        $this->dbg('article-detail', $uri);
+
+        try {
+            $db = Factory::getDbo();
+            $blogCatId = 8;
+
+            // Get article
+            $query = $db->getQuery(true)
+                ->select([
+                    $db->quoteName('ct.id'),
+                    $db->quoteName('ct.title'),
+                    $db->quoteName('ct.alias'),
+                    $db->quoteName('ct.introtext'),
+                    $db->quoteName('ct.fulltext'),
+                    $db->quoteName('ct.catid'),
+                    $db->quoteName('ct.created'),
+                    $db->quoteName('ct.modified'),
+                    $db->quoteName('cat.title', 'category_name'),
+                ])
+                ->from($db->quoteName('#__content', 'ct'))
+                ->join('LEFT', $db->quoteName('#__categories', 'cat') . ' ON ' . $db->quoteName('cat.id') . ' = ' . $db->quoteName('ct.catid'))
+                ->where($db->quoteName('ct.id') . ' = ' . (int)$articleId)
+                ->where($db->quoteName('ct.state') . ' = 1');
+
+            $db->setQuery($query);
+            $article = $db->loadAssoc();
+
+            if (!$article) {
+                $this->responseHelper->sendError(404, 'Article not found');
+                return;
+            }
+
+            // Verify it's a blog article
+            $catCheckQuery = $db->getQuery(true)
+                ->select('1')
+                ->from($db->quoteName('#__categories'))
+                ->where('(' . $db->quoteName('id') . ' = ' . (int)$article['catid'] .
+                       ' OR ' . $db->quoteName('parent_id') . ' = ' . (int)$blogCatId . ')')
+                ->where($db->quoteName('published') . ' = 1');
+
+            $db->setQuery($catCheckQuery);
+            $isBlogArticle = (int)$db->loadResult();
+
+            if (!$isBlogArticle) {
+                $this->responseHelper->sendError(404, 'Article not found');
+                return;
+            }
+
+            // Combine intro and full text
+            $content = trim($article['introtext'] ?? '') . "\n\n" . trim($article['fulltext'] ?? '');
+            $content = trim($content);
+
+            $payload = [
+                'data' => [
+                    'id' => (int)$article['id'],
+                    'title' => $article['title'],
+                    'content' => $content, // Full HTML content
+                    'category' => $article['category_name'] ?? 'Blog',
+                    'category_id' => (int)$article['catid'],
+                    'created' => $article['created'],
+                    'modified' => $article['modified'],
+                ]
             ];
 
             $this->responseHelper->sendJson($payload);
