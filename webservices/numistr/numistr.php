@@ -255,6 +255,12 @@ class PlgWebservicesNumistr extends CMSPlugin
             return;
         }
 
+        // Article list (paginated, optional category filter)
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/articles(?:[?#;]|$)~', $uri)) {
+            $this->handleArticlesList($uri);
+            return;
+        }
+
         // ===================== IMAGES: /v1/variants/{id}/images ============
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/variants/([^/?#;]+)/images(?:[/?#;]|$)~', $uri, $m)) {
             $this->handleVariantImages($uri, (int)$m[1]);
@@ -2042,6 +2048,106 @@ class PlgWebservicesNumistr extends CMSPlugin
                 );
             }
 
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * GET /v1/articles?page=&limit=&category_id=
+     * Yayındaki blog makalelerini sayfalı listeler (mobil blog listesi).
+     * Yanıt öğeleri mobil Article modeliyle birebir:
+     * id, title, intro, category, category_id, created, modified
+     */
+    private function handleArticlesList(string $uri): void
+    {
+        $this->dbg('articles-list', $uri);
+
+        try {
+            $db = Factory::getDbo();
+            $app = Factory::getApplication();
+            $blogCatId = 8; // Blog category ID
+
+            $page  = max(1, (int)$app->input->get('page', 1));
+            $limit = (int)$app->input->get('limit', 20);
+            $limit = max(1, min(50, $limit));
+            $categoryId = (int)$app->input->get('category_id', 0);
+
+            // Blog kategorisi + alt kategorileri
+            $catQuery = $db->getQuery(true)
+                ->select('id')
+                ->from($db->quoteName('#__categories'))
+                ->where($db->quoteName('parent_id') . ' = ' . (int)$blogCatId)
+                ->where($db->quoteName('published') . ' = 1');
+            $db->setQuery($catQuery);
+            $subCatIds = $db->loadColumn() ?: [];
+            $allCatIds = array_merge([$blogCatId], array_map('intval', $subCatIds));
+
+            // category_id verilmişse blog ağacının içinde olmalı
+            if ($categoryId > 0) {
+                if (!in_array($categoryId, $allCatIds, true)) {
+                    $this->responseHelper->sendJson(['data' => [], 'meta' => ['page' => $page, 'limit' => $limit, 'total' => 0]]);
+                    return;
+                }
+                $filterCatIds = [$categoryId];
+            } else {
+                $filterCatIds = $allCatIds;
+            }
+
+            $catIdsSql = implode(',', array_map('intval', $filterCatIds));
+
+            $countQuery = $db->getQuery(true)
+                ->select('COUNT(*)')
+                ->from($db->quoteName('#__content'))
+                ->where($db->quoteName('catid') . ' IN (' . $catIdsSql . ')')
+                ->where($db->quoteName('state') . ' = 1');
+            $db->setQuery($countQuery);
+            $total = (int)$db->loadResult();
+
+            $listQuery = $db->getQuery(true)
+                ->select([
+                    $db->quoteName('c.id'),
+                    $db->quoteName('c.title'),
+                    $db->quoteName('c.introtext'),
+                    $db->quoteName('c.catid'),
+                    $db->quoteName('c.created'),
+                    $db->quoteName('c.modified'),
+                    $db->quoteName('cat.title', 'category_name'),
+                ])
+                ->from($db->quoteName('#__content', 'c'))
+                ->join('LEFT', $db->quoteName('#__categories', 'cat')
+                    . ' ON ' . $db->quoteName('cat.id') . ' = ' . $db->quoteName('c.catid'))
+                ->where($db->quoteName('c.catid') . ' IN (' . $catIdsSql . ')')
+                ->where($db->quoteName('c.state') . ' = 1')
+                ->order($db->quoteName('c.created') . ' DESC')
+                ->setLimit($limit, ($page - 1) * $limit);
+            $db->setQuery($listQuery);
+            $rows = $db->loadAssocList() ?: [];
+
+            $items = [];
+            foreach ($rows as $row) {
+                $intro = strip_tags($row['introtext'] ?? '');
+                $intro = mb_substr($intro, 0, 200, 'UTF-8');
+                if (mb_strlen(strip_tags($row['introtext'] ?? ''), 'UTF-8') > 200) {
+                    $intro .= '...';
+                }
+
+                $items[] = [
+                    'id'          => (int)$row['id'],
+                    'title'       => $row['title'],
+                    'intro'       => $intro,
+                    'category'    => $row['category_name'] ?: 'Blog',
+                    'category_id' => (int)$row['catid'],
+                    'created'     => $row['created'],
+                    'modified'    => ($row['modified'] && $row['modified'] !== '0000-00-00 00:00:00')
+                        ? $row['modified'] : null,
+                ];
+            }
+
+            $this->responseHelper->sendJson([
+                'data' => $items,
+                'meta' => ['page' => $page, 'limit' => $limit, 'total' => $total],
+            ]);
         } catch (\Throwable $e) {
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
         }
