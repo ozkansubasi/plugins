@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Web Auth (Auth0 OIDC login for the Joomla site)
  * @subpackage  plg_system_numistrauth
- * @version     1.0.0
+ * @version     1.0.1
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -210,7 +210,8 @@ class PlgSystemNumistrauth extends CMSPlugin
 
         $domain   = $this->domain();
         $clientId = trim((string) $this->params->get('client_id', ''));
-        $target   = Uri::root() . ltrim($return !== '' ? $return : $this->homeFor($lang), '/');
+        // safeReturn() already yields an absolute same-host URL; only the fallback needs the root prefix
+        $target   = $return !== '' ? $return : Uri::root() . ltrim($this->homeFor($lang), '/');
 
         if ($domain !== '' && $clientId !== '' && (bool) $this->params->get('auth0_logout', 1)) {
             $this->app->redirect('https://' . $domain . '/v2/logout?' . http_build_query(['client_id' => $clientId, 'returnTo' => $target], '', '&', PHP_QUERY_RFC3986));
