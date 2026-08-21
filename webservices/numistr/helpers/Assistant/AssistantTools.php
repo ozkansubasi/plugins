@@ -350,6 +350,29 @@ class NumisTRAssistantTools
 
         $q->select($authCol . ' AS ' . $db->quoteName('authority_name'));
 
+        // mint / material: the view columns are mostly empty, the custom fields carry the data (same as /v1/variants)
+        $fvTable  = $this->dbHelper()->resolveFieldsValuesTable($db);
+        $mintFid  = $this->dbHelper()->fid('mint_name');
+        $matFid   = $this->dbHelper()->fid('material');
+        $mintExpr = 'LOWER(' . $db->quoteName('v.mint_name') . ')';
+        $metalExpr = 'LOWER(' . $db->quoteName('v.metal') . ')';
+
+        if ($mintFid !== null) {
+            $q->join('LEFT', $this->fvJoin($db, $fvTable, 'fv_mint', (int) $mintFid, 'v.article_id'));
+            $mintExpr = 'LOWER(COALESCE(NULLIF(' . $db->quoteName('v.mint_name') . ', ""), ' . $db->quoteName('fv_mint.value') . '))';
+            $q->select('COALESCE(NULLIF(' . $db->quoteName('v.mint_name') . ', ""), ' . $db->quoteName('fv_mint.value') . ') AS ' . $db->quoteName('mint_eff'));
+        } else {
+            $q->select($db->quoteName('v.mint_name', 'mint_eff'));
+        }
+
+        if ($matFid !== null) {
+            $q->join('LEFT', $this->fvJoin($db, $fvTable, 'fv_mat', (int) $matFid, 'v.article_id'));
+            $metalExpr = 'LOWER(COALESCE(NULLIF(' . $db->quoteName('v.metal') . ', ""), ' . $db->quoteName('fv_mat.value') . '))';
+            $q->select('COALESCE(NULLIF(' . $db->quoteName('v.metal') . ', ""), ' . $db->quoteName('fv_mat.value') . ') AS ' . $db->quoteName('metal_eff'));
+        } else {
+            $q->select($db->quoteName('v.metal', 'metal_eff'));
+        }
+
         $region = self::normaliseRegion($in['region'] ?? null);
 
         if ($region !== null) {
@@ -375,7 +398,7 @@ class NumisTRAssistantTools
             $ins      = array_map(function ($m) use ($db) {
                 return $db->quote(mb_strtolower($m, 'UTF-8'));
             }, $variants);
-            $q->where('LOWER(' . $db->quoteName('v.metal') . ') IN (' . implode(',', $ins) . ')');
+            $q->where($metalExpr . ' IN (' . implode(',', $ins) . ')');
         }
 
         $yf = isset($in['date_from']) && $in['date_from'] !== '' ? (int) $in['date_from'] : null;
@@ -419,7 +442,7 @@ class NumisTRAssistantTools
             $like = $db->quote('%' . $free . '%');
             $q->where('(LOWER(' . $db->quoteName('v.title_tr') . ') LIKE ' . $like
                 . ' OR LOWER(' . $db->quoteName('v.title_en') . ') LIKE ' . $like
-                . ' OR LOWER(' . $db->quoteName('v.mint_name') . ') LIKE ' . $like
+                . ' OR ' . $mintExpr . ' LIKE ' . $like
                 . ' OR LOWER(' . $authCol . ') LIKE ' . $like . ')');
         }
 
@@ -432,7 +455,7 @@ class NumisTRAssistantTools
         } else {
             foreach ($mintTry as $pattern) {
                 $qm = clone $q;
-                $qm->where('LOWER(' . $db->quoteName('v.mint_name') . ') LIKE ' . $db->quote($pattern));
+                $qm->where($mintExpr . ' LIKE ' . $db->quote($pattern));
                 $db->setQuery($qm);
                 $rows = $db->loadAssocList() ?: [];
 
@@ -461,6 +484,17 @@ class NumisTRAssistantTools
     {
         $s = mb_strtolower(trim($s), 'UTF-8');
         $s = strtr($s, ['ı' => 'i', 'ş' => 's', 'ç' => 'c', 'ğ' => 'g', 'ö' => 'o', 'ü' => 'u', 'â' => 'a', 'î' => 'i', 'û' => 'u']);
+        $alias = [
+            'efes' => 'ephesus', 'bergama' => 'pergamon', 'milet' => 'miletus', 'izmir' => 'smyrna', 'sart' => 'sardis',
+            'truva' => 'troy', 'foça' => 'phocaea', 'foca' => 'phocaea', 'iznik' => 'nicaea', 'izmit' => 'nicomedia',
+            'antakya' => 'antioch', 'tarsus' => 'tarsus', 'side' => 'side', 'perge' => 'perge', 'bodrum' => 'halicarnassus',
+            'datça' => 'cnidus', 'datca' => 'cnidus', 'knidos' => 'cnidus', 'halikarnassos' => 'halicarnassus', 'rodos' => 'rhodes', 'rhodos' => 'rhodes',
+        ];
+
+        if (isset($alias[$s])) {
+            return $alias[$s];
+        }
+
         $s = str_replace(['kh', 'k', 'ai', 'oi', 'ei'], ['ch', 'c', 'ae', 'oe', 'i'], $s);
 
         return $s;
@@ -476,10 +510,10 @@ class NumisTRAssistantTools
             'article_id' => (int) $r['article_id'],
             'title'      => $title,
             'region'     => $r['region_code'],
-            'metal'      => $this->dbHelper()->normalizeMaterialKey((string) $r['metal']),
+            'metal'      => $this->dbHelper()->normalizeMaterialKey((string) ($r['metal_eff'] ?? $r['metal'] ?? '')),
             'date_from'  => $r['date_from'] !== null ? (int) $r['date_from'] : null,
             'date_to'    => $r['date_to'] !== null ? (int) $r['date_to'] : null,
-            'mint'       => $r['mint_name'],
+            'mint'       => $r['mint_eff'] ?? $r['mint_name'] ?? null,
             'authority'  => $r['authority_name'] ?? null,
             'url'        => self::coinUrl($base, $lang, (string) $r['region_code'], (int) $r['article_id'], (string) ($r['alias'] ?: $r['slug'])),
         ];
