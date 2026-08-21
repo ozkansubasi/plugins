@@ -15,9 +15,9 @@ return [
 
     // ================= Models =================
     'models' => [
-        'classify' => 'gemini-2.5-flash-lite',
-        'site'     => 'gemini-2.5-flash',
-        'explain'  => 'gemini-2.5-flash',
+        'classify' => 'gemini-3.7-flash',
+        'site'     => 'gemini-3.7-flash',
+        'explain'  => 'gemini-3.7-flash',
         'tools'    => 'claude-haiku-4-5',
     ],
 
@@ -30,8 +30,9 @@ return [
     // ================= Cost table (USD per 1M tokens) =================
     // VERIFY CURRENT PRICING before relying on reports (ai.google.dev/pricing, anthropic.com/pricing)
     'costs' => [
-        'gemini-2.5-flash-lite' => ['input' => 0.10, 'output' => 0.40, 'cache' => 0.025],
-        'gemini-2.5-flash'      => ['input' => 0.30, 'output' => 2.50, 'cache' => 0.075],
+        // 2026-08-21: 2.5 modelleri yeni anahtarlara kapali; 3.7-flash canlida dogrulandi (ai.google.dev/pricing, 2026-08)
+        'gemini-3.7-flash'      => ['input' => 0.75, 'output' => 3.75, 'cache' => 0.075],
+        'gemini-3.5-flash'      => ['input' => 1.50, 'output' => 9.00, 'cache' => 0.15],
         'claude-haiku-4-5'      => ['input' => 1.00, 'output' => 5.00, 'cache' => 0.10],
     ],
 
