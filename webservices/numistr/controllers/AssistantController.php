@@ -597,8 +597,8 @@ class AssistantController
     {
         $model = (string) (self::$config['models']['tools'] ?? 'claude-haiku-4-5');
         $names = $route === 'settlement'
-            ? ['search_settlements', 'get_settlement']
-            : ['search_coins', 'get_variant'];
+            ? ['search_settlements', 'get_settlement', 'search_site']
+            : ['search_coins', 'get_variant', 'search_site'];
 
         $tools = new NumisTRAssistantTools(self::$constants, self::$config, self::$secrets, $db);
         $tools->setMessageId($userMsgId > 0 ? $userMsgId : null);
@@ -650,19 +650,51 @@ class AssistantController
         $model = (string) (self::$config['models']['explain'] ?? 'gemini-2.5-flash');
         $tools = new NumisTRAssistantTools(self::$constants, self::$config, self::$secrets, $db);
         $tools->setMessageId($userMsgId > 0 ? $userMsgId : null);
-        $kb    = $tools->execute('search_kb', ['query' => $message, 'lang' => $lang], $lang);
 
-        if (isset($kb['error']) || trim((string) ($kb['answer'] ?? '')) === '') {
-            // KB unavailable -> fall back to the core-KB glossary (site route)
-            self::log('explain-kb', (string) ($kb['error'] ?? 'empty answer'));
+        $kb   = $tools->execute('search_kb', ['query' => $message, 'lang' => $lang], $lang);
+        $site = $tools->execute('search_site', ['query' => $message, 'lang' => $lang, 'limit' => 4], $lang);
+
+        $kbAnswer  = (!isset($kb['error']) && trim((string) ($kb['answer'] ?? '')) !== '') ? trim((string) $kb['answer']) : '';
+        $siteItems = (!isset($site['error']) && !empty($site['items'])) ? $site['items'] : [];
+
+        if (isset($kb['error'])) {
+            self::log('explain-kb', (string) $kb['error']);
+        }
+
+        if (isset($site['error'])) {
+            self::log('explain-site', (string) $site['error']);
+        }
+
+        if ($kbAnswer === '' && empty($siteItems)) {
+            // nothing retrieved -> core-KB glossary behaviour (site route)
             $res = self::routeSite($llm, $message, $history, $lang, $rules, $limits, $coreKb);
             $res['model'] = $model;
 
             return $res;
         }
 
+        $ctx = [];
+
+        if ($kbAnswer !== '') {
+            $ctx[] = ($lang === 'en' ? 'TERMINOLOGY DATABASE:' : 'TERMINOLOJI VERITABANI:') . "\n" . $kbAnswer;
+        }
+
+        $sources = [];
+
+        if (!empty($siteItems)) {
+            $lines = [];
+
+            foreach (array_values($siteItems) as $i => $it) {
+                $n = $i + 1;
+                $lines[] = '[' . $n . '] ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
+                $sources[] = ['title' => $it['title'], 'url' => $it['url']];
+            }
+
+            $ctx[] = ($lang === 'en' ? 'SITE ARTICLES:' : 'SITE MAKALELERI:') . "\n" . implode("\n\n", $lines);
+        }
+
         $system = $rules . "\n\n" . (string) (self::$config['prompts'][$lang]['explain_hint'] ?? '')
-            . "\n\n" . ($lang === 'en' ? 'KNOWLEDGE BASE ANSWER:' : 'BILGI TABANI YANITI:') . "\n" . $kb['answer'];
+            . "\n\n" . ($lang === 'en' ? 'CONTEXT:' : 'BAGLAM:') . "\n" . implode("\n\n", $ctx);
 
         $r = $llm->geminiGenerate($model, $system, $history, $message, [
             'max_output' => (int) $limits['max_output'],
@@ -670,11 +702,13 @@ class AssistantController
 
         if (!$r['ok']) {
             self::log('explain-llm', $r['error']);
-            // still useful: return the raw KB answer
-            $r['text'] = (string) $kb['answer'];
+            $r['text'] = $kbAnswer !== '' ? $kbAnswer : (string) ($siteItems[0]['text'] ?? '');
         }
 
-        $glossaryUrl = (string) (self::$config['site_base'] ?? 'https://numistr.org') . '/' . $lang . '/numizmatik-karsiliklar';
+        if ($kbAnswer !== '') {
+            $glossaryUrl = (string) (self::$config['site_base'] ?? 'https://numistr.org') . '/' . $lang . '/numizmatik-karsiliklar';
+            $sources[]   = ['title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler', 'url' => $glossaryUrl];
+        }
 
         return [
             'text'       => $r['text'],
@@ -683,7 +717,7 @@ class AssistantController
             'tokens_out' => $r['tokens_out'],
             'cost'       => NumisTRLLMClient::cost(self::$config['costs'] ?? [], $model, $r['tokens_in'], $r['tokens_out']),
             'cache_hit'  => $r['cache_hit'],
-            'sources'    => [['title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler', 'url' => $glossaryUrl]],
+            'sources'    => $sources,
             'cta'        => false,
         ];
     }
@@ -700,7 +734,7 @@ class AssistantController
             . "- site: questions about the NumisTR website, membership, Pro, prices, app, scanning quota, contact, data usage, how to use the site, what NumisTR is.\n"
             . "- coin_search: wants to find/list coins or a specific coin by region, metal, date, mint, ruler, type (e.g. 'silver coins of Caria 4th century BC', 'Ephesus tetradrachms', 'coins of Croesus').\n"
             . "- settlement: asks about an ancient city/site/settlement: where it is, its history, whether it minted coins (e.g. 'Aphrodisias nerede', 'tell me about Sardes').\n"
-            . "- explain: asks the meaning/definition of a numismatic term or concept (e.g. 'what is a stater', 'obverse ne demek', 'kontrmark nedir').\n"
+            . "- explain: asks the meaning/definition of a numismatic term or concept (e.g. 'what is a stater', 'obverse ne demek', 'kontrmark nedir'), OR a history/culture/iconography/'why' question about Anatolian coins, rulers, symbols, regions, hoards or collecting that NumisTR articles can answer (e.g. 'Kyzikos sikkelerinde neden balik var', 'who was Croesus', 'what is patina').\n"
             . "- other: greetings only, chit-chat, coin valuation/price requests, politics, coding, anything unrelated.\n"
             . "Examples:\n"
             . "\"Pro uyelik ne kadar?\" -> site\n"
@@ -710,6 +744,8 @@ class AssistantController
             . "\"Where is Xanthos\" -> settlement\n"
             . "\"Tetradrahmi nedir?\" -> explain\n"
             . "\"What does incuse mean\" -> explain\n"
+            . "\"Kyzikos neden sikkelerine balik koydu?\" -> explain\n"
+            . "\"Why did Lydians use lions on coins\" -> explain\n"
             . "\"Sikkem kac para eder?\" -> other\n"
             . "\"Merhaba nasilsin\" -> other\n"
             . "\"Uygulamayi nereden indiririm?\" -> site";

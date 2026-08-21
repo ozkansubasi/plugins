@@ -158,6 +158,21 @@ class NumisTRAssistantTools
                 ],
             ],
             [
+                'name'        => 'search_site',
+                'description' => 'Full-text semantic search over NumisTR articles: blog posts (history, iconography, symbols, rulers, hoards, collecting) and ancient settlement pages. Returns up to 5 excerpts with title and page URL. Use for history/culture/"why" questions and anything not answered by the structured coin/settlement tools.',
+                'input_schema' => [
+                    'type'       => 'object',
+                    'properties' => [
+                        'query' => ['type' => 'string', 'description' => 'Natural-language search query in the user language'],
+                        'type'  => ['type' => 'string', 'enum' => ['blog', 'settlements'], 'description' => 'Optional: restrict to blog posts or settlement pages'],
+                        'lang'  => $langProp,
+                        'limit' => $limitProp,
+                    ],
+                    'required' => ['query'],
+                    'additionalProperties' => false,
+                ],
+            ],
+            [
                 'name'        => 'search_kb',
                 'description' => 'Semantic search in the NumisTR numismatic terminology knowledge base (definitions of terms such as obverse, stater, tetradrachm, countermark). Returns a short answer text.',
                 'input_schema' => [
@@ -208,6 +223,9 @@ class NumisTRAssistantTools
                     break;
                 case 'search_kb':
                     $result = $this->searchKb((string) ($input['query'] ?? ''), (string) ($input['lang'] ?? $defaultLang));
+                    break;
+                case 'search_site':
+                    $result = $this->searchSite((string) ($input['query'] ?? ''), (string) ($input['lang'] ?? $defaultLang), isset($input['type']) ? (string) $input['type'] : null, (int) ($input['limit'] ?? 5));
                     break;
                 default:
                     $result = ['error' => 'unknown tool: ' . $name];
@@ -789,6 +807,79 @@ class NumisTRAssistantTools
     // ======================================================================
     // search_kb (n8n webhook -> Qdrant)
     // ======================================================================
+
+    /**
+     * Semantic search over blog + settlement articles (n8n webhook -> Qdrant numistr_site).
+     * Returns ['items' => [{title,url,type,lang,score,text}], 'has_more' => false] or ['error' => ...].
+     */
+    public function searchSite(string $query, string $lang, ?string $type = null, int $limit = 5): array
+    {
+        $query = trim($query);
+        $lang  = $this->lang($lang, 'tr');
+        $limit = max(1, min(10, $limit));
+
+        if ($query === '') {
+            return ['error' => 'query required'];
+        }
+
+        $url    = (string) ($this->config['tools']['site_search_url'] ?? '');
+        $secret = (string) ($this->secrets['KB_WEBHOOK_SECRET'] ?? '');
+
+        if ($url === '' || $secret === '') {
+            return ['error' => 'site search not configured'];
+        }
+
+        $payload = json_encode([
+            'query' => mb_substr($query, 0, 500),
+            'lang'  => $lang,
+            'type'  => in_array($type, ['blog', 'settlements'], true) ? $type : null,
+            'limit' => $limit,
+        ], JSON_UNESCAPED_UNICODE);
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'X-NumisTR-KB: ' . $secret],
+            CURLOPT_TIMEOUT        => (int) ($this->config['tools']['kb_timeout'] ?? 20),
+            CURLOPT_CONNECTTIMEOUT => 8,
+        ]);
+        $raw  = curl_exec($ch);
+        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err  = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $http < 200 || $http >= 300) {
+            return ['error' => 'site search unreachable (' . ($err !== '' ? $err : 'http ' . $http) . ')'];
+        }
+
+        $data = json_decode((string) $raw, true);
+
+        if (isset($data[0]) && is_array($data[0])) {
+            $data = $data[0];
+        }
+
+        $min   = (float) ($this->config['tools']['site_search_min_score'] ?? 0.3);
+        $items = [];
+
+        foreach ((array) ($data['results'] ?? []) as $r) {
+            if (!is_array($r) || (float) ($r['score'] ?? 0) < $min) {
+                continue;
+            }
+
+            $items[] = [
+                'title' => (string) ($r['title'] ?? ''),
+                'url'   => (string) ($r['url'] ?? ''),
+                'type'  => (string) ($r['type'] ?? ''),
+                'lang'  => (string) ($r['lang'] ?? $lang),
+                'score' => round((float) ($r['score'] ?? 0), 3),
+                'text'  => mb_substr((string) ($r['text'] ?? ''), 0, 1200, 'UTF-8'),
+            ];
+        }
+
+        return ['items' => $items, 'has_more' => false];
+    }
 
     public function searchKb(string $query, string $lang, string $sessionId = ''): array
     {

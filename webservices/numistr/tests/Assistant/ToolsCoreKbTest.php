@@ -12,9 +12,9 @@ $cfg = include $root . '/config/assistant.php';
 // ---- tool definitions ----
 $defs  = NumisTRAssistantTools::definitions();
 $names = array_column($defs, 'name');
-check('5 tools defined', count($defs) === 5, implode(',', $names));
+check('6 tools defined', count($defs) === 6, implode(',', $names));
 check('tool names unique', count(array_unique($names)) === count($names));
-check('expected tool names', $names === ['search_coins', 'get_variant', 'search_settlements', 'get_settlement', 'search_kb']);
+check('expected tool names', $names === ['search_coins', 'get_variant', 'search_settlements', 'get_settlement', 'search_site', 'search_kb']);
 
 foreach ($defs as $d) {
     $ok = isset($d['name'], $d['description'], $d['input_schema'])
