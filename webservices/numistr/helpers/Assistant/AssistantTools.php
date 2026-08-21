@@ -135,7 +135,7 @@ class NumisTRAssistantTools
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
-                        'q'         => ['type' => 'string', 'description' => 'Settlement name or part of it (e.g. Aphrodisias, Efes, Ephesus)'],
+                        'q'         => ['type' => 'string', 'description' => 'Settlement name or part of it; titles use Latin spelling (e.g. Aphrodisias, Ephesus, Cnidus) but Turkish forms (Efes, Knidos) are also matched'],
                         'region'    => ['type' => 'string', 'description' => 'Region in English (caria, lydia, ...)'],
                         'has_coins' => ['type' => 'boolean', 'description' => 'Only settlements that minted coins'],
                         'lang'      => $langProp,
@@ -649,6 +649,39 @@ class NumisTRAssistantTools
         $q->setLimit($limit + 1);
         $db->setQuery($q);
         $rows = $db->loadAssocList() ?: [];
+
+        // Fallbacks for Turkish/Greek spellings: titles are Latin (Knidos -> "Cnidus", Efes -> "Ephesus")
+        if (empty($rows) && $name !== '') {
+            $latin  = self::latinisePlaceName($name);
+            $prefix = mb_substr($latin, 0, min(4, mb_strlen($latin, 'UTF-8')), 'UTF-8');
+            $tries  = [];
+
+            if (mb_strlen($prefix, 'UTF-8') >= 3 && $latin !== $name) {
+                $tries[] = '(LOWER(' . $db->quoteName('c.title') . ') LIKE ' . $db->quote($prefix . '%')
+                    . ' OR LOWER(' . $db->quoteName('c.alias') . ') LIKE ' . $db->quote($prefix . '%') . ')';
+            }
+
+            // the article body usually carries the local spelling
+            $tries[] = 'LOWER(' . $db->quoteName('c.introtext') . ') LIKE ' . $db->quote('%' . $name . '%');
+
+            foreach ($tries as $cond) {
+                $qf = $this->settlementBaseQuery($db, $lang);
+
+                if ($region !== null) {
+                    $qf->join('LEFT', $db->quoteName('#__categories', 'cat') . ' ON ' . $db->quoteName('cat.id') . ' = ' . $db->quoteName('c.catid'));
+                    $qf->where('(LOWER(' . $db->quoteName('fv_reg.value') . ') LIKE ' . $db->quote('%' . $region . '%')
+                        . ' OR LOWER(' . $db->quoteName('cat.alias') . ') LIKE ' . $db->quote($region . '%') . ')');
+                }
+
+                $qf->where($cond)->order($db->quoteName('c.title') . ' ASC')->setLimit($limit + 1);
+                $db->setQuery($qf);
+                $rows = $db->loadAssocList() ?: [];
+
+                if (!empty($rows)) {
+                    break;
+                }
+            }
+        }
 
         $hasMore = count($rows) > $limit;
         $rows    = array_slice($rows, 0, $limit);
