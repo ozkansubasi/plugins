@@ -7,7 +7,7 @@
     <license>GNU General Public License version 2 or later</license>
     <authorEmail>info@numistr.org</authorEmail>
     <authorUrl>https://www.numistr.org</authorUrl>
-    <version>1.0.2</version>
+    <version>1.1.0</version>
     <description>PLG_SYSTEM_NUMISTRAUTH_XML_DESCRIPTION</description>
 
     <files>
@@ -30,6 +30,7 @@
                 <field name="auth0_domain" type="text" label="PLG_SYSTEM_NUMISTRAUTH_DOMAIN_LABEL" description="PLG_SYSTEM_NUMISTRAUTH_DOMAIN_DESC" default="dev-ja5k8sumb7005j4n.us.auth0.com" required="true" />
                 <field name="client_id" type="text" label="PLG_SYSTEM_NUMISTRAUTH_CLIENT_ID_LABEL" description="PLG_SYSTEM_NUMISTRAUTH_CLIENT_ID_DESC" required="true" />
                 <field name="client_secret" type="password" label="PLG_SYSTEM_NUMISTRAUTH_CLIENT_SECRET_LABEL" description="PLG_SYSTEM_NUMISTRAUTH_CLIENT_SECRET_DESC" required="true" filter="raw" autocomplete="off" />
+                <field name="db_connection" type="text" label="PLG_SYSTEM_NUMISTRAUTH_DBCONN_LABEL" description="PLG_SYSTEM_NUMISTRAUTH_DBCONN_DESC" default="Username-Password-Authentication" />
                 <field name="connection" type="text" label="PLG_SYSTEM_NUMISTRAUTH_CONNECTION_LABEL" description="PLG_SYSTEM_NUMISTRAUTH_CONNECTION_DESC" />
                 <field name="require_email_verified" type="radio" layout="joomla.form.field.radio.switcher" label="PLG_SYSTEM_NUMISTRAUTH_VERIFIED_LABEL" description="PLG_SYSTEM_NUMISTRAUTH_VERIFIED_DESC" default="1">
                     <option value="0">JNO</option><option value="1">JYES</option>

@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Web Auth (Auth0 OIDC login for the Joomla site)
  * @subpackage  plg_system_numistrauth
- * @version     1.0.2
+ * @version     1.1.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -15,6 +15,7 @@
  *   /index.php?option=com_ajax&plugin=numistrauth&format=raw&task=signup[&return=...]
  *   /index.php?option=com_ajax&plugin=numistrauth&format=raw&task=callback   (Auth0 redirect_uri)
  *   /index.php?option=com_ajax&plugin=numistrauth&format=raw&task=logout[&return=...]
+ *   /index.php?option=com_ajax&plugin=numistrauth&format=raw&task=password  (şifre sıfırlama e-postası, giriş gerekli)
  *   /index.php?option=com_ajax&plugin=numistrauth&format=json&task=status    (giriş durumu, JSON)
  */
 
@@ -53,6 +54,8 @@ class PlgSystemNumistrauth extends CMSPlugin
                 return $this->handleCallback();
             case 'logout':
                 return $this->handleLogout();
+            case 'password':
+                return $this->handlePasswordReset();
             case 'status':
                 return $this->status();
             default:
@@ -229,6 +232,56 @@ class PlgSystemNumistrauth extends CMSPlugin
         } else {
             $this->app->redirect($target);
         }
+
+        return null;
+    }
+
+    // ------------------------------------------------------------------
+    // 3b) Password reset e-mail (Auth0 database connection, no secret needed)
+    // ------------------------------------------------------------------
+    private function handlePasswordReset()
+    {
+        $lang   = $this->lang();
+        $user   = Factory::getUser();
+        $return = $this->safeReturn((string) $this->app->input->getString('return', ''), $lang);
+        $target = $return !== '' ? $return : $this->defaultReturn($lang);
+
+        if ($user->id <= 0 || trim((string) $user->email) === '') {
+            $this->app->enqueueMessage(Factory::getLanguage()->_('PLG_SYSTEM_NUMISTRAUTH_ERR_LOGIN'), 'warning');
+            $this->app->redirect($target);
+
+            return null;
+        }
+
+        $domain = $this->domain();
+        $conn   = trim((string) $this->params->get('db_connection', 'Username-Password-Authentication'));
+        $body   = json_encode([
+            'client_id'  => trim((string) $this->params->get('client_id', '')),
+            'email'      => (string) $user->email,
+            'connection' => $conn,
+        ]);
+
+        $ch = curl_init('https://' . $domain . '/dbconnections/change_password');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $body,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $raw  = curl_exec($ch);
+        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($raw !== false && $http === 200) {
+            $this->app->enqueueMessage(Factory::getLanguage()->_('PLG_SYSTEM_NUMISTRAUTH_MSG_PASSWORD_SENT'), 'message');
+        } else {
+            $this->log('password-reset', 'http=' . $http . ' ' . substr((string) $raw, 0, 200));
+            $this->app->enqueueMessage(Factory::getLanguage()->_('PLG_SYSTEM_NUMISTRAUTH_ERR_PASSWORD'), 'error');
+        }
+
+        $this->app->redirect($target);
 
         return null;
     }
