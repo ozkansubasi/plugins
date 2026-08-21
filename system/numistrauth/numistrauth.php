@@ -72,6 +72,17 @@ class PlgSystemNumistrauth extends CMSPlugin
             return $this->fail(503, 'Auth0 not configured');
         }
 
+        // Session cookies are host-only: start the flow on the canonical host so the
+        // callback (also canonical) finds the same session/state.
+        $current = Uri::getInstance();
+        $canon   = Uri::getInstance($this->canonicalRoot());
+
+        if (strcasecmp($current->getHost(), $canon->getHost()) !== 0) {
+            $this->app->redirect($this->canonicalRoot() . ltrim($current->toString(['path', 'query']), '/'));
+
+            return null;
+        }
+
         $session  = $this->app->getSession();
         $state    = bin2hex(random_bytes(16));
         $verifier = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
