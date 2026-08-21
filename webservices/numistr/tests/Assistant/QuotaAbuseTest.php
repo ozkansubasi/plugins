@@ -39,10 +39,10 @@ check('system breaker: monthly $150', NumisTRAssistantQuota::systemEvaluate($sys
 // ---- cost ----
 $costs = $cfg['costs'];
 check('cost: haiku 1M in + 1M out = $6', abs(NumisTRLLMClient::cost($costs, 'claude-haiku-4-5', 1000000, 1000000) - 6.0) < 1e-9);
-check('cost: flash-lite classify ~ 300/5 tokens', abs(NumisTRLLMClient::cost($costs, 'gemini-2.5-flash-lite', 300, 5) - 0.000032) < 1e-6);
-check('cost: cached tokens billed at cache rate', NumisTRLLMClient::cost($costs, 'gemini-2.5-flash', 10000, 100, 9000) < NumisTRLLMClient::cost($costs, 'gemini-2.5-flash', 10000, 100, 0));
+check('cost: 3.7-flash classify ~ 300/5 tokens', abs(NumisTRLLMClient::cost($costs, 'gemini-3.7-flash', 300, 5) - 0.00024375) < 1e-6);
+check('cost: cached tokens billed at cache rate', NumisTRLLMClient::cost($costs, 'gemini-3.7-flash', 10000, 100, 9000) < NumisTRLLMClient::cost($costs, 'gemini-3.7-flash', 10000, 100, 0));
 check('cost: unknown model -> 0', NumisTRLLMClient::cost($costs, 'nope', 1000, 1000) === 0.0);
-check('cost: cached > total input is clamped', NumisTRLLMClient::cost($costs, 'gemini-2.5-flash', 100, 0, 500) >= 0);
+check('cost: cached > total input is clamped', NumisTRLLMClient::cost($costs, 'gemini-3.7-flash', 100, 0, 500) >= 0);
 
 // ---- abuse ----
 $abuse = new NumisTRAssistantAbuse($cfg);

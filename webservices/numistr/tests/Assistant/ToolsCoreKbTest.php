@@ -132,13 +132,13 @@ check('looksLikeCacheError ignores other errors', !NumisTRLLMClient::looksLikeCa
 
 $client = new NumisTRLLMClient($cfg, []);
 check('client without keys reports missing', !$client->hasGemini() && !$client->hasAnthropic());
-$r = $client->classify('gemini-2.5-flash-lite', 'sys', 'hello', ['site']);
+$r = $client->classify('gemini-3.7-flash', 'sys', 'hello', ['site']);
 check('classify without key -> ok=false, label null (fallback path)', $r['ok'] === false && $r['label'] === null);
 $r = $client->claudeToolLoop('claude-haiku-4-5', 'sys', [], 'hello', $defs, function () { return []; });
 check('tool loop without key -> ok=false with error', $r['ok'] === false && $r['error'] !== '');
 
 // ---- config sanity ----
-check('models configured', $cfg['models']['classify'] === 'gemini-2.5-flash-lite' && $cfg['models']['tools'] === 'claude-haiku-4-5');
+check('models configured', $cfg['models']['classify'] === 'gemini-3.7-flash' && $cfg['models']['tools'] === 'claude-haiku-4-5');
 check('every model has a cost row', isset($cfg['costs'][$cfg['models']['classify']], $cfg['costs'][$cfg['models']['site']], $cfg['costs'][$cfg['models']['tools']]));
 check('prompts forbid counts (TR)', stripos($cfg['prompts']['tr']['rules'], 'sayisi verme') !== false);
 check('prompts forbid counts (EN)', stripos($cfg['prompts']['en']['rules'], 'NEVER state total') !== false);

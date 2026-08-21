@@ -109,9 +109,9 @@ class NumisTRAssistantTools
                         'metal'     => ['type' => 'string', 'description' => 'silver | gold | bronze | electrum | lead | iron'],
                         'date_from' => ['type' => 'integer', 'description' => 'Earliest year; BC is negative (e.g. -400)'],
                         'date_to'   => ['type' => 'integer', 'description' => 'Latest year; BC is negative (e.g. -300)'],
-                        'mint'      => ['type' => 'string', 'description' => 'Mint (ancient city) name, Latin spelling (e.g. ephesus, sardes)'],
+                        'mint'      => ['type' => 'string', 'description' => 'Mint (ancient city) name in English/Latin catalogue spelling, never the Turkish form (e.g. halicarnassus not Halikarnassos, rhodes not Rhodos, ephesus, sardes, cnidus)'],
                         'authority' => ['type' => 'string', 'description' => 'Issuing authority / ruler (e.g. croesus, hadrian)'],
-                        'q'         => ['type' => 'string', 'description' => 'Free text matched against title, mint and authority'],
+                        'q'         => ['type' => 'string', 'description' => 'Free text matched against title, mint and authority (English/Latin spelling)'],
                         'limit'     => $limitProp,
                     ],
                     'additionalProperties' => false,
@@ -380,10 +380,18 @@ class NumisTRAssistantTools
             $q->where('(' . $db->quoteName('v.date_from') . ' IS NULL OR ' . $db->quoteName('v.date_from') . ' <= ' . (int) $to . ')');
         }
 
-        $mint = mb_strtolower(trim((string) ($in['mint'] ?? '')), 'UTF-8');
+        $mint     = mb_strtolower(trim((string) ($in['mint'] ?? '')), 'UTF-8');
+        $mintTry  = [];
 
         if ($mint !== '') {
-            $q->where('LOWER(' . $db->quoteName('v.mint_name') . ') LIKE ' . $db->quote('%' . str_replace(' ', '_', $mint) . '%'));
+            // 1st: as given; 2nd: Latinised prefix fallback (Halikarnassos -> halic -> halicarnassus, Rhodos -> rhod -> rhodes)
+            $mintTry[] = '%' . str_replace(' ', '_', $mint) . '%';
+            $latin     = self::latinisePlaceName($mint);
+            $prefix    = mb_substr($latin, 0, min(4, mb_strlen($latin, 'UTF-8')), 'UTF-8');
+
+            if ($prefix !== '' && mb_strlen($prefix, 'UTF-8') >= 3) {
+                $mintTry[] = $prefix . '%';
+            }
         }
 
         $auth = mb_strtolower(trim((string) ($in['authority'] ?? '')), 'UTF-8');
@@ -403,8 +411,23 @@ class NumisTRAssistantTools
         }
 
         $q->order($db->quoteName('v.article_id') . ' ASC')->setLimit($limit + 1);
-        $db->setQuery($q);
-        $rows = $db->loadAssocList() ?: [];
+        $rows = [];
+
+        if (empty($mintTry)) {
+            $db->setQuery($q);
+            $rows = $db->loadAssocList() ?: [];
+        } else {
+            foreach ($mintTry as $pattern) {
+                $qm = clone $q;
+                $qm->where('LOWER(' . $db->quoteName('v.mint_name') . ') LIKE ' . $db->quote($pattern));
+                $db->setQuery($qm);
+                $rows = $db->loadAssocList() ?: [];
+
+                if (!empty($rows)) {
+                    break;
+                }
+            }
+        }
 
         $hasMore = count($rows) > $limit;
         $rows    = array_slice($rows, 0, $limit);
@@ -416,6 +439,18 @@ class NumisTRAssistantTools
         }
 
         return ['items' => $items, 'has_more' => $hasMore];
+    }
+
+    /**
+     * Rough Turkish/Greek -> Latin catalogue spelling for place names (used only as a LIKE-prefix fallback).
+     */
+    public static function latinisePlaceName(string $s): string
+    {
+        $s = mb_strtolower(trim($s), 'UTF-8');
+        $s = strtr($s, ['ı' => 'i', 'ş' => 's', 'ç' => 'c', 'ğ' => 'g', 'ö' => 'o', 'ü' => 'u', 'â' => 'a', 'î' => 'i', 'û' => 'u']);
+        $s = str_replace(['kh', 'k', 'ai', 'oi', 'ei'], ['ch', 'c', 'ae', 'oe', 'i'], $s);
+
+        return $s;
     }
 
     private function variantRow(array $r, string $lang, string $base): array
