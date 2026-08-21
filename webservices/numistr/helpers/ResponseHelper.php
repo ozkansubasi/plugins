@@ -13,8 +13,9 @@ class NumisTRResponseHelper
      * JSON response gönderir (başarılı)
      * 
      * @param array $payload Response data
+     * @param bool  $noStore true = Cache-Control: no-store (per-user / POST answers, e.g. assistant chat)
      */
-    public function sendJson($payload): void
+    public function sendJson($payload, bool $noStore = false): void
     {
         $app = Factory::getApplication();
         
@@ -26,8 +27,8 @@ class NumisTRResponseHelper
         // Content type
         $app->setHeader('Content-Type', 'application/json; charset=utf-8', true);
         
-        // Cache control - 30 saniye cache
-        $app->setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=30', true);
+        // Cache control - 30 saniye cache (noStore ile kapatilabilir)
+        $app->setHeader('Cache-Control', $noStore ? 'no-store' : 'public, max-age=30, stale-while-revalidate=30', true);
 
         // ETag/If-None-Match - Değişmeyen içerik için 304 döndür
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

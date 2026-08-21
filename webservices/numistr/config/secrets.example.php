@@ -25,4 +25,15 @@ return [
      *   php -r "echo bin2hex(random_bytes(24));"
      */
     'revenuecat_webhook_secret' => '',
+
+    /*
+     * AI Asistan (ADR-003). Anahtarlar:
+     *   GEMINI_API_KEY    : Google AI Studio (aistudio.google.com) API key
+     *   ANTHROPIC_API_KEY : console.anthropic.com API key
+     *   KB_WEBHOOK_SECRET : n8n numistr-kb-query webhook'una X-NumisTR-KB basligiyla gonderilen paylasilan sir
+     * Bos birakilan anahtar ilgili rotayi devre disi birakir (asistan 503 / tool hata dondurur).
+     */
+    'GEMINI_API_KEY'    => '',
+    'ANTHROPIC_API_KEY' => '',
+    'KB_WEBHOOK_SECRET' => '',
 ];

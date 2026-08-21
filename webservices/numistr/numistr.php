@@ -47,6 +47,34 @@ if (file_exists(__DIR__ . '/controllers/BillingController.php')) {
     require_once __DIR__ . '/controllers/BillingController.php';
 }
 
+// ---- AI Assistant (ADR-003, Phase 1) - optional, all-or-nothing ----
+// The controller is only loaded when every helper it depends on is present,
+// so a partial upload can never take the rest of /v1 down (2026-07-08 lesson).
+$numistrAssistantFiles = [
+    __DIR__ . '/helpers/Assistant/AssistantSettings.php',
+    __DIR__ . '/helpers/Assistant/LLMClient.php',
+    __DIR__ . '/helpers/Assistant/AssistantQuota.php',
+    __DIR__ . '/helpers/Assistant/AssistantAbuse.php',
+    __DIR__ . '/helpers/Assistant/AssistantTools.php',
+    __DIR__ . '/helpers/Assistant/AssistantCoreKb.php',
+    __DIR__ . '/controllers/AssistantController.php',
+];
+$numistrAssistantReady = file_exists(__DIR__ . '/config/assistant.php');
+
+foreach ($numistrAssistantFiles as $numistrAssistantFile) {
+    if (!file_exists($numistrAssistantFile)) {
+        $numistrAssistantReady = false;
+        break;
+    }
+}
+
+if ($numistrAssistantReady) {
+    foreach ($numistrAssistantFiles as $numistrAssistantFile) {
+        require_once $numistrAssistantFile;
+    }
+}
+unset($numistrAssistantFiles, $numistrAssistantFile, $numistrAssistantReady);
+
 class PlgWebservicesNumistr extends CMSPlugin
 {
     private $config;
@@ -142,6 +170,27 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
             BillingController::revenueCatWebhook();
+            return;
+        }
+
+        // ===================== AI ASSISTANT: /v1/assistant/* ================
+        // Must stay BEFORE the generic /v1/variants handlers.
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/assistant/(chat|health|conversations/(\d+))(?:[/?#;]|$)~', $uri, $m)) {
+            $this->dbg('assistant-' . $m[1], $uri);
+
+            if (!class_exists('AssistantController')) {
+                $this->responseHelper->sendError(503, 'Service Unavailable', 'Assistant not deployed');
+                return;
+            }
+
+            if ($m[1] === 'chat') {
+                AssistantController::chat();
+            } elseif ($m[1] === 'health') {
+                AssistantController::health();
+            } else {
+                AssistantController::conversation((int) $m[2]);
+            }
+
             return;
         }
 
