@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="authentication" method="upgrade">
+    <name>PLG_AUTHENTICATION_NUMISTRAUTH</name>
+    <author>NumisTR</author>
+    <creationDate>August 2026</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>https://www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_AUTHENTICATION_NUMISTRAUTH_XML_DESCRIPTION</description>
+    <files>
+        <filename plugin="numistrauth">numistrauth.php</filename>
+        <folder>language</folder>
+    </files>
+    <languages>
+        <language tag="en-GB">language/en-GB/plg_authentication_numistrauth.ini</language>
+        <language tag="en-GB">language/en-GB/plg_authentication_numistrauth.sys.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_authentication_numistrauth.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_authentication_numistrauth.sys.ini</language>
+    </languages>
+</extension>
