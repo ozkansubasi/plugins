@@ -93,7 +93,20 @@ class AssistantController
         $tr       = $kb->build('tr');
         $en       = $kb->build('en');
 
+        $diag = null;
+
+        // ?diag=1 -> one tiny live Gemini call, returns only the error text (never the keys)
+        if (isset($_GET['diag']) && (string) $_GET['diag'] === '1') {
+            $llm   = new NumisTRLLMClient(self::$config, self::$secrets, null);
+            $model = (string) (self::$config['models']['classify'] ?? 'gemini-2.5-flash-lite');
+            $g     = $llm->classify($model, 'Reply with exactly one word: ok', 'ping', ['ok']);
+            $diag  = [
+                'gemini' => ['ok' => (bool) $g['ok'], 'model' => $model, 'error' => mb_substr((string) ($g['error'] ?? ''), 0, 300)],
+            ];
+        }
+
         $response->sendJson([
+            'diag'    => $diag,
             'ok'      => (bool) (self::$config['enabled'] ?? false) && $tr['exists'] && $en['exists'],
             'enabled' => (bool) (self::$config['enabled'] ?? false),
             'models'  => self::$config['models'] ?? [],
