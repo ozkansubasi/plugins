@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Web Auth (Auth0 OIDC login for the Joomla site)
  * @subpackage  plg_system_numistrauth
- * @version     1.0.1
+ * @version     1.0.2
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -211,7 +211,7 @@ class PlgSystemNumistrauth extends CMSPlugin
         $domain   = $this->domain();
         $clientId = trim((string) $this->params->get('client_id', ''));
         // safeReturn() already yields an absolute same-host URL; only the fallback needs the root prefix
-        $target   = $return !== '' ? $return : Uri::root() . ltrim($this->homeFor($lang), '/');
+        $target   = $return !== '' ? $return : $this->canonicalRoot() . ltrim($this->homeFor($lang), '/');
 
         if ($domain !== '' && $clientId !== '' && (bool) $this->params->get('auth0_logout', 1)) {
             $this->app->redirect('https://' . $domain . '/v2/logout?' . http_build_query(['client_id' => $clientId, 'returnTo' => $target], '', '&', PHP_QUERY_RFC3986));
@@ -337,9 +337,25 @@ class PlgSystemNumistrauth extends CMSPlugin
         return rtrim((string) $d, '/');
     }
 
+    /**
+     * Canonical site root for Auth0 redirect/return URLs. The site answers on both
+     * numistr.org and www.numistr.org; Auth0 requires an exact match, so the host is
+     * pinned to the configured canonical root (param) instead of the request host.
+     */
+    private function canonicalRoot(): string
+    {
+        $root = trim((string) $this->params->get('canonical_root', ''));
+
+        if ($root === '' || !preg_match('#^https://[a-z0-9.-]+(/.*)?$#i', $root)) {
+            $root = Uri::root();
+        }
+
+        return rtrim($root, '/') . '/';
+    }
+
     private function redirectUri(): string
     {
-        return Uri::root() . 'index.php?option=com_ajax&plugin=numistrauth&format=raw&task=callback';
+        return $this->canonicalRoot() . 'index.php?option=com_ajax&plugin=numistrauth&format=raw&task=callback';
     }
 
     private function lang(): string
@@ -369,7 +385,7 @@ class PlgSystemNumistrauth extends CMSPlugin
         $key = $lang === 'en' ? 'return_en' : 'return_tr';
         $v   = trim((string) $this->params->get($key, ''));
 
-        return $v !== '' ? Uri::root() . ltrim($v, '/') : Uri::root() . ltrim($this->homeFor($lang), '/');
+        return $v !== '' ? $this->canonicalRoot() . ltrim($v, '/') : $this->canonicalRoot() . ltrim($this->homeFor($lang), '/');
     }
 
     /** Only same-host relative paths are accepted (open-redirect guard). */
@@ -383,7 +399,7 @@ class PlgSystemNumistrauth extends CMSPlugin
 
         if ($return[0] === '/' && (strlen($return) === 1 || $return[1] !== '/')) {
             if (preg_match('#^/[A-Za-z0-9_\-./?=&%+]*$#', $return)) {
-                return Uri::root() . ltrim($return, '/');
+                return $this->canonicalRoot() . ltrim($return, '/');
             }
 
             return '';
@@ -412,7 +428,7 @@ class PlgSystemNumistrauth extends CMSPlugin
     {
         $this->app->enqueueMessage(Factory::getLanguage()->_($langKey), 'error');
         $page = trim((string) $this->params->get($lang === 'en' ? 'error_en' : 'error_tr', ''));
-        $this->app->redirect(Uri::root() . ltrim($page !== '' ? $page : $this->homeFor($lang), '/'));
+        $this->app->redirect($this->canonicalRoot() . ltrim($page !== '' ? $page : $this->homeFor($lang), '/'));
 
         return null;
     }
