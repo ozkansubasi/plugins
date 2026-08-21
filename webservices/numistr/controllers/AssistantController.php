@@ -108,6 +108,31 @@ class AssistantController
             $diag  = [
                 'gemini' => ['ok' => (bool) $g['ok'], 'model' => $model, 'error' => mb_substr((string) ($g['error'] ?? ''), 0, 300)],
             ];
+
+            // optional DB tool probe: &tool=search_coins|search_settlements&mint=..&region=..&q=..&metal=..
+            $toolName = (string) ($_GET['tool'] ?? '');
+
+            if (in_array($toolName, ['search_coins', 'search_settlements'], true)) {
+                $params = [];
+
+                foreach (['mint', 'region', 'q', 'metal', 'authority'] as $k) {
+                    if (isset($_GET[$k]) && $_GET[$k] !== '') {
+                        $params[$k] = mb_substr((string) $_GET[$k], 0, 60);
+                    }
+                }
+
+                $params['limit'] = 3;
+                $toolLang        = ($_GET['lang'] ?? 'tr') === 'en' ? 'en' : 'tr';
+
+                try {
+                    $tools = new NumisTRAssistantTools(self::$constants, self::$config, self::$secrets, Factory::getDbo());
+                    $out   = $toolName === 'search_coins' ? $tools->searchCoins($params, $toolLang) : $tools->searchSettlements($params, $toolLang);
+                    $diag['tool'] = ['name' => $toolName, 'params' => $params, 'ok' => !isset($out['error']), 'error' => $out['error'] ?? null,
+                        'count' => isset($out['items']) ? count($out['items']) : null, 'first' => $out['items'][0] ?? null];
+                } catch (\Throwable $e) {
+                    $diag['tool'] = ['name' => $toolName, 'params' => $params, 'ok' => false, 'exception' => mb_substr($e->getMessage(), 0, 500)];
+                }
+            }
         }
 
         $response->sendJson([
