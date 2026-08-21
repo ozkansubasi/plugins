@@ -152,6 +152,147 @@ class AssistantController
     }
 
     // ======================================================================
+    // GET /v1/assistant/export?type=blog|settlements&lang=tr|en&page=N&per_page=100[&since=YYYY-MM-DD]
+    // Plain-text article feed for the RAG ingestion (n8n -> Qdrant numistr_site).
+    // Protected with the shared KB secret (X-NumisTR-KB header).
+    // ======================================================================
+
+    public static function export(): void
+    {
+        self::boot();
+        $response = new NumisTRResponseHelper();
+
+        $secret = trim((string) (self::$secrets['KB_WEBHOOK_SECRET'] ?? ''));
+        $given  = trim((string) ($_SERVER['HTTP_X_NUMISTR_KB'] ?? ''));
+
+        if ($secret === '' || $given === '' || !hash_equals($secret, $given)) {
+            $response->sendError(401, 'Unauthorized', 'X-NumisTR-KB header required');
+            return;
+        }
+
+        $type    = (string) ($_GET['type'] ?? 'blog');
+        $lang    = (($_GET['lang'] ?? 'tr') === 'en') ? 'en' : 'tr';
+        $page    = max(1, (int) ($_GET['page'] ?? 1));
+        $perPage = max(1, min(200, (int) ($_GET['per_page'] ?? 100)));
+        $since   = trim((string) ($_GET['since'] ?? ''));
+
+        if (!in_array($type, ['blog', 'settlements'], true)) {
+            $response->sendError(400, 'Bad Request', 'type must be blog|settlements');
+            return;
+        }
+
+        if ($since !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/', $since)) {
+            $since = '';
+        }
+
+        $db      = Factory::getDbo();
+        $langTag = $lang === 'en' ? 'en-GB' : 'tr-TR';
+        $cfg     = self::$config['export'] ?? [];
+        $roots   = $type === 'blog'
+            ? (array) ($cfg['blog_roots'][$lang] ?? ($lang === 'en' ? [106] : [8]))
+            : (array) ($cfg['settlement_roots'][$lang] ?? ($lang === 'en' ? [71] : [70]));
+
+        // category subtree via lft/rgt
+        $catIds = [];
+
+        foreach ($roots as $root) {
+            $q = $db->getQuery(true)->select(['lft', 'rgt'])->from($db->quoteName('#__categories'))->where('id = ' . (int) $root);
+            $db->setQuery($q);
+            $r = $db->loadAssoc();
+
+            if ($r) {
+                $q = $db->getQuery(true)->select('id')->from($db->quoteName('#__categories'))
+                    ->where('extension = ' . $db->quote('com_content'))
+                    ->where('lft >= ' . (int) $r['lft'] . ' AND rgt <= ' . (int) $r['rgt'])
+                    ->where('published = 1');
+                $db->setQuery($q);
+                $catIds = array_merge($catIds, array_map('intval', (array) $db->loadColumn()));
+            }
+        }
+
+        $catIds = array_values(array_unique($catIds));
+
+        if (empty($catIds)) {
+            $response->sendJson(['data' => [], 'meta' => ['page' => $page, 'per_page' => $perPage, 'total' => 0, 'type' => $type, 'lang' => $lang]]);
+            return;
+        }
+
+        $in = implode(',', $catIds);
+        $qc = $db->getQuery(true)->select('COUNT(*)')->from($db->quoteName('#__content', 'c'))
+            ->where('c.state = 1')->where('c.catid IN (' . $in . ')')
+            ->where('c.language IN (' . $db->quote($langTag) . ',' . $db->quote('*') . ')');
+
+        if ($since !== '') {
+            $qc->where('c.modified >= ' . $db->quote($since));
+        }
+
+        $db->setQuery($qc);
+        $total = (int) $db->loadResult();
+
+        $q = $db->getQuery(true)
+            ->select(['c.id', 'c.title', 'c.alias', 'c.catid', 'c.introtext', 'c.fulltext', 'c.modified', 'c.language', 'cat.alias AS cat_alias', 'cat.title AS cat_title'])
+            ->from($db->quoteName('#__content', 'c'))
+            ->join('INNER', $db->quoteName('#__categories', 'cat') . ' ON cat.id = c.catid')
+            ->where('c.state = 1')->where('c.catid IN (' . $in . ')')
+            ->where('c.language IN (' . $db->quote($langTag) . ',' . $db->quote('*') . ')')
+            ->order('c.id ASC');
+
+        if ($since !== '') {
+            $q->where('c.modified >= ' . $db->quote($since));
+        }
+
+        $db->setQuery($q, ($page - 1) * $perPage, $perPage);
+        $rows = $db->loadAssocList() ?: [];
+
+        // category -> menu alias (public URL path), cached per request
+        $menuAlias = [];
+        $aliasFor  = static function (int $catid) use ($db, $langTag, &$menuAlias): string {
+            if (isset($menuAlias[$catid])) {
+                return $menuAlias[$catid];
+            }
+
+            $alias = '';
+
+            try {
+                $q = $db->getQuery(true)->select('alias')->from($db->quoteName('#__menu'))
+                    ->where('published = 1')->where('client_id = 0')
+                    ->where($db->quoteName('link') . ' LIKE ' . $db->quote('%option=com_content&view=category%'))
+                    ->where('(' . $db->quoteName('link') . ' LIKE ' . $db->quote('%&id=' . $catid) . ' OR ' . $db->quoteName('link') . ' LIKE ' . $db->quote('%&id=' . $catid . '&%') . ')')
+                    ->where($db->quoteName('language') . ' IN (' . $db->quote($langTag) . ',' . $db->quote('*') . ')')
+                    ->order($db->quoteName('language') . ' DESC')->setLimit(1);
+                $db->setQuery($q);
+                $alias = (string) $db->loadResult();
+            } catch (\Throwable $e) {
+                $alias = '';
+            }
+
+            return $menuAlias[$catid] = $alias;
+        };
+
+        $base = rtrim((string) (self::$config['site_base'] ?? 'https://numistr.org'), '/');
+        $out  = [];
+
+        foreach ($rows as $r) {
+            $menu = $aliasFor((int) $r['catid']);
+            $path = $menu !== '' ? $menu : (string) $r['cat_alias'];
+            $text = NumisTRAssistantTools::htmlToText((string) $r['introtext'] . "\n" . (string) $r['fulltext'], 60000);
+
+            $out[] = [
+                'id'       => (int) $r['id'],
+                'type'     => $type,
+                'lang'     => $lang,
+                'title'    => (string) $r['title'],
+                'category' => (string) $r['cat_title'],
+                'url'      => $base . '/' . $lang . '/' . $path . '/' . (int) $r['id'] . '-' . $r['alias'],
+                'modified' => (string) $r['modified'],
+                'text'     => $text,
+            ];
+        }
+
+        $response->sendJson(['data' => $out, 'meta' => ['page' => $page, 'per_page' => $perPage, 'total' => $total, 'type' => $type, 'lang' => $lang]]);
+    }
+
+    // ======================================================================
     // GET /v1/assistant/conversations/{id}
     // ======================================================================
 

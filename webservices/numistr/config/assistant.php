@@ -27,6 +27,13 @@ return [
     // Gemini explicit cache TTL (seconds) for the core-KB system prompt
     'gemini_cache_ttl' => 3600,
 
+    // ================= RAG export (/v1/assistant/export) =================
+    // Category roots whose subtrees are exported as plain text for the Qdrant site index.
+    'export' => [
+        'blog_roots'       => ['tr' => [8],  'en' => [106]],
+        'settlement_roots' => ['tr' => [70], 'en' => [71]],
+    ],
+
     // ================= Cost table (USD per 1M tokens) =================
     // VERIFY CURRENT PRICING before relying on reports (ai.google.dev/pricing, anthropic.com/pricing)
     'costs' => [

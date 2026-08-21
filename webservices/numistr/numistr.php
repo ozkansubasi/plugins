@@ -175,7 +175,7 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         // ===================== AI ASSISTANT: /v1/assistant/* ================
         // Must stay BEFORE the generic /v1/variants handlers.
-        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/assistant/(chat|health|conversations/(\d+))(?:[/?#;]|$)~', $uri, $m)) {
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/assistant/(chat|health|export|conversations/(\d+))(?:[/?#;]|$)~', $uri, $m)) {
             $this->dbg('assistant-' . $m[1], $uri);
 
             if (!class_exists('AssistantController')) {
@@ -187,6 +187,8 @@ class PlgWebservicesNumistr extends CMSPlugin
                 AssistantController::chat();
             } elseif ($m[1] === 'health') {
                 AssistantController::health();
+            } elseif ($m[1] === 'export') {
+                AssistantController::export();
             } else {
                 AssistantController::conversation((int) $m[2]);
             }
