@@ -99,6 +99,11 @@ class AssistantController
         if (isset($_GET['diag']) && (string) $_GET['diag'] === '1') {
             $llm   = new NumisTRLLMClient(self::$config, self::$secrets, null);
             $model = (string) (self::$config['models']['classify'] ?? 'gemini-2.5-flash-lite');
+
+            // optional model probe: ?diag=1&model=gemini-x.y-flash (strict whitelist pattern)
+            if (isset($_GET['model']) && preg_match('/^gemini-[0-9.]{1,5}-[a-z-]{1,20}$/', (string) $_GET['model'])) {
+                $model = (string) $_GET['model'];
+            }
             $g     = $llm->classify($model, 'Reply with exactly one word: ok', 'ping', ['ok']);
             $diag  = [
                 'gemini' => ['ok' => (bool) $g['ok'], 'model' => $model, 'error' => mb_substr((string) ($g['error'] ?? ''), 0, 300)],
