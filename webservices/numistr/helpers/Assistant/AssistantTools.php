@@ -331,11 +331,24 @@ class NumisTRAssistantTools
         }
 
         $q = $db->getQuery(true)
-            ->select(['v.article_id', 'v.title_tr', 'v.title_en', 'v.slug', 'v.region_code', 'v.metal', 'v.date_from', 'v.date_to', 'v.mint_name', 'v.authority_name', 'ct.alias'])
+            ->select(['v.article_id', 'v.title_tr', 'v.title_en', 'v.slug', 'v.region_code', 'v.metal', 'v.date_from', 'v.date_to', 'v.mint_name', 'ct.alias'])
             ->from($db->quoteName('o_numistr_variants_public', 'v'))
             ->join('INNER', $db->quoteName('#__content', 'ct') . ' ON ' . $db->quoteName('ct.id') . ' = ' . $db->quoteName('v.article_id')
                 . ' AND ' . $db->quoteName('ct.catid') . ' IN (' . implode(',', array_map('intval', $allowed)) . ')'
                 . ' AND ' . $db->quoteName('ct.state') . ' = 1');
+
+        // authority lives in Joomla custom fields (the public view has no authority_name column)
+        $authCol = 'NULL';
+        $authFid = $this->dbHelper()->fid('authority_name');
+
+        if ($authFid !== null) {
+            $q->join('LEFT', $db->quoteName($this->dbHelper()->resolveFieldsValuesTable($db), 'fv_auth')
+                . ' ON ' . $db->quoteName('fv_auth.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
+                . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int) $authFid);
+            $authCol = $db->quoteName('fv_auth.value');
+        }
+
+        $q->select($authCol . ' AS ' . $db->quoteName('authority_name'));
 
         $region = self::normaliseRegion($in['region'] ?? null);
 
@@ -397,7 +410,7 @@ class NumisTRAssistantTools
         $auth = mb_strtolower(trim((string) ($in['authority'] ?? '')), 'UTF-8');
 
         if ($auth !== '') {
-            $q->where('LOWER(' . $db->quoteName('v.authority_name') . ') LIKE ' . $db->quote('%' . $auth . '%'));
+            $q->where('LOWER(' . $authCol . ') LIKE ' . $db->quote('%' . $auth . '%'));
         }
 
         $free = mb_strtolower(trim((string) ($in['q'] ?? '')), 'UTF-8');
@@ -407,7 +420,7 @@ class NumisTRAssistantTools
             $q->where('(LOWER(' . $db->quoteName('v.title_tr') . ') LIKE ' . $like
                 . ' OR LOWER(' . $db->quoteName('v.title_en') . ') LIKE ' . $like
                 . ' OR LOWER(' . $db->quoteName('v.mint_name') . ') LIKE ' . $like
-                . ' OR LOWER(' . $db->quoteName('v.authority_name') . ') LIKE ' . $like . ')');
+                . ' OR LOWER(' . $authCol . ') LIKE ' . $like . ')');
         }
 
         $q->order($db->quoteName('v.article_id') . ' ASC')->setLimit($limit + 1);
@@ -467,7 +480,7 @@ class NumisTRAssistantTools
             'date_from'  => $r['date_from'] !== null ? (int) $r['date_from'] : null,
             'date_to'    => $r['date_to'] !== null ? (int) $r['date_to'] : null,
             'mint'       => $r['mint_name'],
-            'authority'  => $r['authority_name'],
+            'authority'  => $r['authority_name'] ?? null,
             'url'        => self::coinUrl($base, $lang, (string) $r['region_code'], (int) $r['article_id'], (string) ($r['alias'] ?: $r['slug'])),
         ];
     }
@@ -504,6 +517,7 @@ class NumisTRAssistantTools
             'obv_en' => $fid('obverse_desc'),
             'rev_en' => $fid('reverse_desc'),
             'denom'  => $fid('denomination_name'),
+            'authority_name' => $fid('authority_name'),
         ];
 
         foreach ($extra as $alias => $fieldId) {
