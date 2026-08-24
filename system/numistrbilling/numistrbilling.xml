@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>PLG_SYSTEM_NUMISTRBILLING</name>
+    <author>NumisTR</author>
+    <creationDate>August 2026</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>https://www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_NUMISTRBILLING_XML_DESCRIPTION</description>
+
+    <files>
+        <filename plugin="numistrbilling">numistrbilling.php</filename>
+        <folder>src</folder>
+        <folder>sql</folder>
+        <folder>language</folder>
+    </files>
+
+    <languages>
+        <language tag="en-GB">language/en-GB/plg_system_numistrbilling.ini</language>
+        <language tag="en-GB">language/en-GB/plg_system_numistrbilling.sys.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrbilling.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrbilling.sys.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field name="canonical_root" type="text" label="Canonical root" default="https://www.numistr.org" />
+                <field name="base_url" type="list" label="iyzico ortamı" default="https://api.iyzipay.com">
+                    <option value="https://api.iyzipay.com">Canlı (api.iyzipay.com)</option>
+                    <option value="https://sandbox-api.iyzipay.com">Sandbox (sandbox-api.iyzipay.com)</option>
+                </field>
+                <field name="api_key" type="text" label="iyzico API Key" required="true" />
+                <field name="secret_key" type="password" label="iyzico Secret Key" required="true" filter="raw" autocomplete="off" />
+                <field name="merchant_id" type="text" label="iyzico Merchant ID" description="Webhook imza (V3) doğrulaması için" />
+                <field name="plan_monthly_ref" type="text" label="Aylık plan referenceCode" />
+                <field name="plan_yearly_ref" type="text" label="Yıllık plan referenceCode" />
+                <field name="price_monthly" type="text" label="Aylık fiyat (görünüm)" default="₺99,99/ay" />
+                <field name="price_yearly" type="text" label="Yıllık fiyat (görünüm)" default="₺839,99/yıl" />
+                <field name="pro_group_id" type="number" label="Pro grup ID" default="10" />
+                <field name="grace_days" type="number" label="Ödeme sonrası tolerans (gün)" description="Dönem bittikten kaç gün sonra Pro kaldırılır" default="3" />
+                <field name="webhook_signature_required" type="radio" layout="joomla.form.field.radio.switcher" label="Webhook imzası zorunlu" description="iyzico hesabında X-IYZ-SIGNATURE-V3 aktifleşince 1 yapın" default="0">
+                    <option value="0">JNO</option><option value="1">JYES</option>
+                </field>
+                <field name="housekeeping_key" type="password" label="Housekeeping anahtarı" description="n8n cron çağrısı için gizli anahtar (boşsa uç kapalı)" filter="raw" autocomplete="off" />
+            </fieldset>
+            <fieldset name="pages" label="Sayfalar">
+                <field name="account_tr" type="text" label="Hesabım (TR)" default="/tr/hesabim" />
+                <field name="account_en" type="text" label="My Account (EN)" default="/en/my-account" />
+                <field name="error_tr" type="text" label="Hata dönüş sayfası (TR)" default="/tr/abonelikler" />
+                <field name="error_en" type="text" label="Hata dönüş sayfası (EN)" default="/en/plans" />
+                <field name="contract_url" type="text" label="Mesafeli Satış Sözleşmesi URL" default="/tr/mesafeli-satis-sozlesmesi" />
+                <field name="preinfo_url" type="text" label="Ön Bilgilendirme Formu URL" default="/tr/on-bilgilendirme-formu" />
+            </fieldset>
+        </fields>
+    </config>
+</extension>
