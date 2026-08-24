@@ -143,12 +143,12 @@ return [
     // first match wins; keys are lower-case substrings; answers per language
     'keyword_map' => [
         'pro uyelik' => [
-            'tr' => 'Pro uyelik mobil uygulamadan (Play Store) aylik 99,99 TL veya yillik 699,99 TL olarak alinir. Pro: sinirsiz sikke tanima, tum eslesmeler, detayli bilgi ve cevrimdisi veritabani. Ayrintilar: /tr/abonelikler',
-            'en' => 'Pro membership is purchased in the mobile app (Play Store): 99.99 TL/month or 699.99 TL/year. Pro gives unlimited coin recognition, all matches, detailed info and the offline database. Details: /en/plans',
+            'tr' => 'Pro uyelik mobil uygulamadan (Play Store) aylik 99,99 TL veya yillik 839,99 TL olarak alinir. Pro: sinirsiz sikke tanima, tum eslesmeler, detayli bilgi ve cevrimdisi veritabani. Ayrintilar: /tr/abonelikler',
+            'en' => 'Pro membership is purchased in the mobile app (Play Store): €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Pro gives unlimited coin recognition, all matches, detailed info and the offline database. Details: /en/plans',
         ],
         'pro membership' => [
-            'tr' => 'Pro uyelik mobil uygulamadan (Play Store) aylik 99,99 TL veya yillik 699,99 TL olarak alinir. Ayrintilar: /tr/abonelikler',
-            'en' => 'Pro membership is purchased in the mobile app (Play Store): 99.99 TL/month or 699.99 TL/year. Details: /en/plans',
+            'tr' => 'Pro uyelik mobil uygulamadan (Play Store) aylik 99,99 TL veya yillik 839,99 TL olarak alinir. Ayrintilar: /tr/abonelikler',
+            'en' => 'Pro membership is purchased in the mobile app (Play Store): €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Details: /en/plans',
         ],
         'kac tarama' => [
             'tr' => 'Ucretsiz uyelikte ayda 10 sikke tarama hakki vardir; Pro uyelikte sinirsizdir. Tarama icin mobil uygulamaya giris yapmaniz gerekir.',
