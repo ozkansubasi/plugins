@@ -100,7 +100,7 @@ class AiServiceHelper
      *
      * @throws  RuntimeException  If AI service request fails
      */
-    public function recognize($imagePath, $reversePath = null)
+    public function recognize($imagePath, $reversePath = null, $attrs = array())
     {
         $startTime = microtime(true);
 
@@ -114,6 +114,13 @@ class AiServiceHelper
 
             if ($reversePath && file_exists($reversePath)) {
                 $postFields['reverse'] = new CURLFile($reversePath, 'image/jpeg', 'reverse.jpg');
+            }
+
+            // Faz B (2026-08-24): kolleksiyoner isteğe bağlı nitelikleri (metal/ağırlık/çap)
+            foreach (array('metal', 'weight_g', 'diameter_mm') as $k) {
+                if (isset($attrs[$k]) && $attrs[$k] !== '' && $attrs[$k] !== null) {
+                    $postFields[$k] = (string) $attrs[$k];
+                }
             }
 
             curl_setopt_array($ch, array(
@@ -228,7 +235,11 @@ class AiServiceHelper
             'matches' => $matches,
             'confidence' => isset($aiResults['confidence']) ? $aiResults['confidence'] : 0,
             'method' => isset($aiResults['method']) ? $aiResults['method'] : 'unknown',
-            'processing_time_ms' => isset($aiResults['processing_time_ms']) ? $aiResults['processing_time_ms'] : 0
+            'processing_time_ms' => isset($aiResults['processing_time_ms']) ? $aiResults['processing_time_ms'] : 0,
+            // Faz A (2026-08-24): nedenli fallback + kalite metrikleri app'e geçsin
+            'no_match' => isset($aiResults['no_match']) ? (bool) $aiResults['no_match'] : empty($matches),
+            'no_match_reason' => isset($aiResults['no_match_reason']) ? $aiResults['no_match_reason'] : null,
+            'quality' => isset($aiResults['quality']) ? $aiResults['quality'] : null
         );
     }
 

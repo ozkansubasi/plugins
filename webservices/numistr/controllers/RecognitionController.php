@@ -89,7 +89,14 @@ class RecognitionController
                     ? $reverseFile['tmp_name']
                     : null;
 
-                $aiResults = $aiHelper->recognize($imageFile['tmp_name'], $reversePath);
+                // Faz B: isteğe bağlı nitelikler (metal/ağırlık/çap) — AI servise iletilir
+                $attrs = array(
+                    'metal'       => isset($_POST['metal']) ? substr(trim((string) $_POST['metal']), 0, 20) : null,
+                    'weight_g'    => isset($_POST['weight_g']) ? substr(trim((string) $_POST['weight_g']), 0, 10) : null,
+                    'diameter_mm' => isset($_POST['diameter_mm']) ? substr(trim((string) $_POST['diameter_mm']), 0, 10) : null,
+                );
+
+                $aiResults = $aiHelper->recognize($imageFile['tmp_name'], $reversePath, $attrs);
 
             } catch (RuntimeException $e) {
                 // AI service error - don't consume quota
