@@ -96,7 +96,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             return null;
         }
 
-        echo $this->renderBillingFormPage($user, $plan, []);
+        echo $this->renderBillingFormPage($user, $plan, [], [], $this->currencyFromInput());
         $this->app->close();
 
         return null;
@@ -119,7 +119,8 @@ class PlgSystemNumistrbilling extends CMSPlugin
         }
 
         $plan    = $this->planFromInput();
-        $planRef = $this->planRef($plan);
+        $cur     = $this->currencyFromInput();
+        $planRef = $this->planRef($plan, $cur);
 
         if ($plan === '' || $planRef === '') {
             return $this->failRedirect('PLG_SYSTEM_NUMISTRBILLING_ERR_PLAN');
@@ -140,7 +141,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $errors = $this->validateBilling($fields);
 
         if ($errors) {
-            echo $this->renderBillingFormPage($user, $plan, $errors, $fields);
+            echo $this->renderBillingFormPage($user, $plan, $errors, $fields, $cur);
             $this->app->close();
 
             return null;
@@ -159,7 +160,8 @@ class PlgSystemNumistrbilling extends CMSPlugin
             $gsm = '+90' . $digits;
         }
 
-        $conversationId = 'u' . (int) $user->id . '|' . $plan . '|' . bin2hex(random_bytes(4));
+        // conversationId'ye para birimini de göm: oturum düşerse callback doğru ref'i yazsın
+        $conversationId = 'u' . (int) $user->id . '|' . $plan . '|' . strtolower($cur) . '|' . bin2hex(random_bytes(4));
 
         $body = [
             'locale'                   => 'tr',
@@ -205,6 +207,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'user_id'         => (int) $user->id,
             'plan'            => $plan,
             'plan_ref'        => $planRef,
+            'currency'        => $cur,
             'conversation_id' => $conversationId,
             'consent_at'      => Factory::getDate()->toSql(),
             'consent_ip'      => $this->clientIp(),
@@ -257,10 +260,20 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $pending = (array) $s->get(self::SESSION_NS . '.pending', []);
         $userId  = (int) ($pending['user_id'] ?? 0);
         $plan    = (string) ($pending['plan'] ?? '');
+        $cur     = strtoupper((string) ($pending['currency'] ?? ''));
 
-        if ($userId <= 0 && preg_match('/^u(\d+)\|(monthly|yearly)\|/', $convId, $m)) {
+        // conversationId biçimi: u<id>|<plan>|<cur>|<rnd>  (1.0.0'da <cur> yoktu → opsiyonel)
+        if ($userId <= 0 && preg_match('/^u(\d+)\|(monthly|yearly)\|(?:(try|eur)\|)?/', $convId, $m)) {
             $userId = (int) $m[1];
             $plan   = $m[2];
+
+            if ($cur === '' && !empty($m[3])) {
+                $cur = strtoupper($m[3]);
+            }
+        }
+
+        if ($cur === '') {
+            $cur = 'TRY';
         }
 
         if ($userId <= 0) {
@@ -280,7 +293,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'plan'                        => $plan,
             'subscription_reference_code' => $subRef,
             'customer_reference_code'     => $customerRef,
-            'pricing_plan_reference_code' => (string) ($pending['plan_ref'] ?? $this->planRef($plan)),
+            'pricing_plan_reference_code' => (string) ($pending['plan_ref'] ?? $this->planRef($plan, $cur)),
             'status'                      => $subStatus !== '' ? $subStatus : 'ACTIVE',
             'current_period_end'          => $this->periodEndFrom('now', $plan),
             'conversation_id'             => $convId,
@@ -617,14 +630,43 @@ class PlgSystemNumistrbilling extends CMSPlugin
         return in_array($plan, ['monthly', 'yearly'], true) ? $plan : '';
     }
 
-    private function planRef(string $plan): string
+    /**
+     * Para birimi: açık `cur` parametresi > site dili (en-GB → EUR) > TRY.
+     * iyzico kısıtı: yabancı para planına yalnız TL-dışı kartla abone olunabilir.
+     */
+    private function currencyFromInput(): string
     {
+        $cur = strtoupper((string) $this->app->input->getCmd('cur', ''));
+
+        if (in_array($cur, ['EUR', 'TRY'], true)) {
+            return $cur === 'EUR' && $this->eurConfigured() ? 'EUR' : 'TRY';
+        }
+
+        $tag = strtolower((string) $this->app->getLanguage()->getTag());
+
+        return (strpos($tag, 'en') === 0 && $this->eurConfigured()) ? 'EUR' : 'TRY';
+    }
+
+    private function eurConfigured(): bool
+    {
+        return trim((string) $this->params->get('plan_monthly_eur_ref', '')) !== ''
+            || trim((string) $this->params->get('plan_yearly_eur_ref', '')) !== '';
+    }
+
+    private function planRef(string $plan, string $cur = 'TRY'): string
+    {
+        $suffix = ($cur === 'EUR') ? '_eur' : '';
+
         if ($plan === 'monthly') {
-            return trim((string) $this->params->get('plan_monthly_ref', ''));
+            $ref = trim((string) $this->params->get('plan_monthly' . $suffix . '_ref', ''));
+
+            return $ref !== '' ? $ref : trim((string) $this->params->get('plan_monthly_ref', ''));
         }
 
         if ($plan === 'yearly') {
-            return trim((string) $this->params->get('plan_yearly_ref', ''));
+            $ref = trim((string) $this->params->get('plan_yearly' . $suffix . '_ref', ''));
+
+            return $ref !== '' ? $ref : trim((string) $this->params->get('plan_yearly_ref', ''));
         }
 
         return '';
@@ -1018,14 +1060,29 @@ class PlgSystemNumistrbilling extends CMSPlugin
     // Sayfa şablonları (bilinçli self-contained: YooTheme dışı com_ajax çıktısı)
     // ==================================================================
 
-    private function renderBillingFormPage($user, string $plan, array $errors, array $old = []): string
+    private function renderBillingFormPage($user, string $plan, array $errors, array $old = [], string $cur = 'TRY'): string
     {
-        $t        = $this->texts();
-        $priceKey = $plan === 'yearly' ? 'price_yearly' : 'price_monthly';
-        $price    = (string) $this->params->get($priceKey, $plan === 'yearly' ? '₺839,99/yıl' : '₺99,99/ay');
+        $t = $this->texts();
+
+        $isEur    = ($cur === 'EUR');
+        $suffix   = $isEur ? '_eur' : '';
+        $priceKey = ($plan === 'yearly' ? 'price_yearly' : 'price_monthly') . $suffix;
+
+        if ($isEur) {
+            $fallbackPrice = $plan === 'yearly' ? '€34,99/yıl' : '€3,99/ay';
+        } else {
+            $fallbackPrice = $plan === 'yearly' ? '₺839,99/yıl' : '₺99,99/ay';
+        }
+
+        $price    = (string) $this->params->get($priceKey, $fallbackPrice);
         $planName = $plan === 'yearly' ? $t['plan_yearly'] : $t['plan_monthly'];
-        $action   = $this->endpointUrl('start') . '&plan=' . $plan;
+        $action   = $this->endpointUrl('start') . '&plan=' . $plan . '&cur=' . strtolower($cur);
         $token    = Session::getFormToken();
+
+        // iyzico kısıtı: yabancı para planına yalnız TL-dışı kartla abone olunabilir.
+        $curNotice = $isEur
+            ? '<p class="note">' . htmlspecialchars($t['eur_card_notice'], ENT_QUOTES, 'UTF-8') . '</p>'
+            : '';
 
         $nameParts = explode(' ', trim((string) $user->name), 2);
         $v         = static function (string $key, string $fallback) use ($old) {
@@ -1047,6 +1104,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             . '<style>' . $this->pageCss() . '</style></head><body><div class="card">'
             . '<h1>' . $t['checkout_title'] . '</h1>'
             . '<p class="plan"><strong>' . $planName . '</strong> · ' . htmlspecialchars($price, ENT_QUOTES, 'UTF-8') . '</p>'
+            . $curNotice
             . '<form method="post" action="' . htmlspecialchars($action, ENT_QUOTES, 'UTF-8') . '">'
             . '<input type="hidden" name="' . $token . '" value="1">'
             . '<div class="row2">'
@@ -1131,6 +1189,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
                 'consent'          => 'I have read and accept the <a href="%s" target="_blank">Preliminary Information Form</a> and the <a href="%s" target="_blank">Distance Sales Agreement</a>.',
                 'pay_button'       => 'Continue to secure payment',
                 'secure_note'      => 'Payment is processed by iyzico. Your card details are never stored on NumisTR.',
+                'eur_card_notice'  => 'This plan is charged in euro (EUR). Cards issued in Turkish lira cannot be used for foreign-currency subscriptions — please use a non-TRY card, or switch to the Turkish lira plan.',
                 'already_active'   => 'You already have an active PRO subscription.',
                 'success'          => 'Your PRO subscription is active. Welcome!',
                 'canceled'         => 'Your subscription has been canceled. PRO access continues until the end of the paid period.',
@@ -1161,6 +1220,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'consent'          => '<a href="%s" target="_blank">Ön Bilgilendirme Formu</a>\'nu ve <a href="%s" target="_blank">Mesafeli Satış Sözleşmesi</a>\'ni okudum, kabul ediyorum.',
             'pay_button'       => 'Güvenli ödemeye geç',
             'secure_note'      => 'Ödeme iyzico altyapısıyla alınır. Kart bilgileriniz NumisTR\'de saklanmaz.',
+            'eur_card_notice'  => 'Bu plan euro (EUR) olarak tahsil edilir. Yabancı para aboneliklerinde TL kartlar kullanılamaz — TL dışı bir kart kullanın veya Türk lirası planına geçin.',
             'already_active'   => 'Zaten aktif bir PRO aboneliğiniz var.',
             'success'          => 'PRO aboneliğiniz aktif. Hoş geldiniz!',
             'canceled'         => 'Aboneliğiniz iptal edildi. PRO erişiminiz ödenen dönemin sonuna kadar devam eder.',

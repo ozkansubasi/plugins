@@ -7,7 +7,7 @@
     <license>GNU General Public License version 2 or later</license>
     <authorEmail>info@numistr.org</authorEmail>
     <authorUrl>https://www.numistr.org</authorUrl>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <description>PLG_SYSTEM_NUMISTRBILLING_XML_DESCRIPTION</description>
 
     <files>
@@ -39,6 +39,14 @@
                 <field name="plan_yearly_ref" type="text" label="Yıllık plan referenceCode" />
                 <field name="price_monthly" type="text" label="Aylık fiyat (görünüm)" default="₺99,99/ay" />
                 <field name="price_yearly" type="text" label="Yıllık fiyat (görünüm)" default="₺839,99/yıl" />
+
+                <field name="eur_spacer" type="spacer"
+                       label="EUR planları (EN sayfası) — boş bırakılırsa EUR kapalı kalır" />
+                <field name="plan_monthly_eur_ref" type="text" label="Aylık EUR plan referenceCode"
+                       description="Boşsa /en/* de TRY planına düşer." />
+                <field name="plan_yearly_eur_ref" type="text" label="Yıllık EUR plan referenceCode" />
+                <field name="price_monthly_eur" type="text" label="Aylık EUR fiyat (görünüm)" default="€3,99/ay" />
+                <field name="price_yearly_eur" type="text" label="Yıllık EUR fiyat (görünüm)" default="€34,99/yıl" />
                 <field name="pro_group_id" type="number" label="Pro grup ID" default="10" />
                 <field name="grace_days" type="number" label="Ödeme sonrası tolerans (gün)" description="Dönem bittikten kaç gün sonra Pro kaldırılır" default="3" />
                 <field name="webhook_signature_required" type="radio" layout="joomla.form.field.radio.switcher" label="Webhook imzası zorunlu" description="iyzico hesabında X-IYZ-SIGNATURE-V3 aktifleşince 1 yapın" default="0">
