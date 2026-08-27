@@ -7,7 +7,7 @@
     <license>GNU General Public License version 2 or later</license>
     <authorEmail>info@numistr.org</authorEmail>
     <authorUrl>https://www.numistr.org</authorUrl>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <description>PLG_SYSTEM_NUMISTRBILLING_XML_DESCRIPTION</description>
 
     <files>
@@ -51,6 +51,10 @@
                 <field name="grace_days" type="number" label="Ödeme sonrası tolerans (gün)" description="Dönem bittikten kaç gün sonra Pro kaldırılır" default="3" />
                 <field name="webhook_signature_required" type="radio" layout="joomla.form.field.radio.switcher" label="Webhook imzası zorunlu" description="iyzico hesabında X-IYZ-SIGNATURE-V3 aktifleşince 1 yapın" default="0">
                     <option value="0">JNO</option><option value="1">JYES</option>
+                </field>
+                <field name="expire_active_after_period" type="radio" layout="joomla.form.field.radio.switcher" label="Dönemi biten ACTIVE aboneliği kapat" description="iyzico iptallerde webhook GÖNDERMEZ. Açıkken, yenileme webhook'u ile dönemi uzatılmamış ACTIVE abonelikler tolerans süresi sonunda Pro'dan düşer. Yalnızca yenileme webhook'unun canlıda geldiği doğrulandıktan sonra 1 yapın." default="0">
+                    <option value="0">Hayır (yalnızca say ve raporla)</option>
+                    <option value="1">Evet</option>
                 </field>
                 <field name="housekeeping_key" type="password" label="Housekeeping anahtarı" description="n8n cron çağrısı için gizli anahtar (boşsa uç kapalı)" filter="raw" autocomplete="off" />
             </fieldset>

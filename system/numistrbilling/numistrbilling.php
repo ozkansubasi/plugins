@@ -336,8 +336,13 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $custRef   = (string) ($payload['customerReferenceCode'] ?? '');
         $iyziRef   = (string) ($payload['iyziReferenceCode'] ?? '');
 
+        // Ödeme bildirimleri (Firma Ayarları → üye işyeri bildirimleri) aynı URL'ye
+        // düşebilir. iyzico teslimatı sağlıklı saysın diye 400 DEĞİL, 200 dönüyoruz;
+        // olayı yalnızca kaydedip geçiyoruz (Pro durumu abonelik olaylarından yönetilir).
         if ($subRef === '' || strpos($eventType, 'subscription.') !== 0) {
-            return $this->fail(400, 'not a subscription event');
+            $this->log('wh-non-subscription', 'event=' . ($eventType !== '' ? $eventType : '(bos)'));
+
+            return $this->ok(['ok' => true, 'action' => 'ignored_non_subscription']);
         }
 
         // İmza doğrulama (X-IYZ-SIGNATURE-V3). Dokümanda alan sırası çelişkili
@@ -569,17 +574,45 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $graceDays = max(0, (int) $this->params->get('grace_days', 3));
         $cutoff    = Factory::getDate('-' . $graceDays . ' days')->toSql();
 
-        $db = Factory::getDbo();
-        $db->setQuery(
-            'SELECT * FROM ' . $db->quoteName('numistr_subscriptions')
-            . ' WHERE ' . $db->quoteName('source') . ' = ' . $db->quote(self::SOURCE)
-            . ' AND ' . $db->quoteName('status') . ' IN (' . $db->quote('CANCELED') . ', ' . $db->quote('UNPAID') . ', ' . $db->quote('EXPIRED') . ')'
+        // Kira (lease) modeli: iyzico İPTALLERDE webhook GÖNDERMİYOR (destek teyidi,
+        // 27.08.2026) ve abonelik okuma uçları bu hesapta veri dönmüyor. Bu yüzden
+        // "ACTIVE" tek başına güvenilir değil; asıl doğruluk kaynağı current_period_end.
+        // Yenileme tahsilatı webhook'u dönemi uzatır; uzatılmayan satır kendiliğinden düşer.
+        //
+        // Süpürme, yenileme webhook'ları CANLI olarak doğrulanana kadar varsayılan
+        // KAPALI. Kapalıyken bile süresi geçmiş ACTIVE satırlar sayılıp raporlanır ki
+        // cron sessizce hiçbir şey yapıyor görünmesin.
+        $expireActive = (int) $this->params->get('expire_active_after_period', 0) === 1;
+
+        $db       = Factory::getDbo();
+        $statuses = [$db->quote('CANCELED'), $db->quote('UNPAID'), $db->quote('EXPIRED')];
+
+        if ($expireActive) {
+            $statuses[] = $db->quote('ACTIVE');
+        }
+
+        $baseWhere = ' WHERE ' . $db->quoteName('source') . ' = ' . $db->quote(self::SOURCE)
             . ' AND ' . $db->quoteName('current_period_end') . ' IS NOT NULL'
-            . ' AND ' . $db->quoteName('current_period_end') . ' < ' . $db->quote($cutoff)
+            . ' AND ' . $db->quoteName('current_period_end') . ' < ' . $db->quote($cutoff);
+
+        $db->setQuery(
+            'SELECT * FROM ' . $db->quoteName('numistr_subscriptions') . $baseWhere
+            . ' AND ' . $db->quoteName('status') . ' IN (' . implode(', ', $statuses) . ')'
         );
 
         $rows    = (array) $db->loadObjectList();
         $revoked = [];
+
+        // Süpürme kapalıyken bile görünürlük: süresi geçmiş ACTIVE satır sayısı.
+        $staleActive = 0;
+
+        if (!$expireActive) {
+            $db->setQuery(
+                'SELECT COUNT(*) FROM ' . $db->quoteName('numistr_subscriptions') . $baseWhere
+                . ' AND ' . $db->quoteName('status') . ' = ' . $db->quote('ACTIVE')
+            );
+            $staleActive = (int) $db->loadResult();
+        }
 
         foreach ($rows as $row) {
             $userId = (int) $row->user_id;
@@ -596,9 +629,19 @@ class PlgSystemNumistrbilling extends CMSPlugin
             $this->updateSubscription((string) $row->subscription_reference_code, ['status' => 'EXPIRED']);
         }
 
-        $this->log('housekeeping', 'checked=' . count($rows) . ' revoked=[' . implode(',', $revoked) . ']');
+        $this->log(
+            'housekeeping',
+            'checked=' . count($rows) . ' revoked=[' . implode(',', $revoked) . ']'
+            . ' expireActive=' . ($expireActive ? '1' : '0') . ' staleActive=' . $staleActive
+        );
 
-        return $this->ok(['ok' => true, 'checked' => count($rows), 'revoked' => $revoked]);
+        return $this->ok([
+            'ok'            => true,
+            'checked'       => count($rows),
+            'revoked'       => $revoked,
+            'expire_active' => $expireActive,
+            'stale_active'  => $staleActive,
+        ]);
     }
 
     // ==================================================================
