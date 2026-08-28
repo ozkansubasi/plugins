@@ -214,8 +214,15 @@ class PlgWebservicesNumistr extends CMSPlugin
                     return;
                 }
 
-                if (!Session::checkToken('post') && !Session::checkToken('request')) {
-                    $this->responseHelper->sendError(403, 'Forbidden', 'Invalid CSRF token');
+                // NOT: Session::checkToken() kullanilmaz — oturumu YENI olan
+                // istemcide (curl, suresi dolmus oturum) Joomla ana sayfaya
+                // YONLENDIRIR; widget o zaman JSON yerine HTML alir ve kullaniciya
+                // anlamsiz bir hata gosterir. Jetonu elle karsilastirip temiz bir
+                // 403 JSON donuyoruz (widget bunu "sayfayi yenileyin" mesajina cevirir).
+                $token = Session::getFormToken();
+
+                if (!$app->input->post->get($token, false, 'alnum') && !$app->input->get->get($token, false, 'alnum')) {
+                    $this->responseHelper->sendError(403, 'Forbidden', 'Invalid or expired CSRF token');
                     return;
                 }
 
