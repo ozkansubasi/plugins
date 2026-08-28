@@ -179,6 +179,10 @@ class QuotaHelper
             'used' => $used,
             'remaining' => $remaining,
             'limit' => $limit,
+            // Pro'da limit bir sentinel'dir (PRO_TIER_LIMIT). Istemci ham sayiyi
+            // gostermesin diye durumu acikca bildiriyoruz; boylece her istemci
+            // esigi kendi tahmin etmek zorunda kalmaz.
+            'unlimited' => $limit >= self::PRO_TIER_LIMIT,
             'tier' => $tier,
             'reset_date' => date('Y-m-01', strtotime('+1 month'))
         );
