@@ -1088,11 +1088,13 @@ class AssistantController
             'answer'          => $text,
             'route'           => $route,
             'sources'         => array_values((array) ($res['sources'] ?? [])),
+            // Faz 2b: widget rozeti ve CTA icin kimlik tipi (anon | user | pro)
+            'identity'        => $identity['type'],
             'quota'           => ['remaining_today' => $quota->remaining($identity['type'], $identity['key'])],
         ];
 
         if (!empty($res['cta']) && $identity['type'] === 'anon') {
-            $out['cta'] = ['type' => 'register', 'url' => (string) (self::$config['register_url'][$lang] ?? self::$config['register_url']['tr'] ?? '')];
+            $out['cta'] = self::authCta($lang);
         }
 
         return $out;
@@ -1104,12 +1106,39 @@ class AssistantController
      */
     private static function staticReply(string $lang, array $identity, string $route, string $text, NumisTRAssistantQuota $quota): array
     {
-        return [
+        $out = [
             'conversation_id' => null,
             'answer'          => $text,
             'route'           => $route,
             'sources'         => [],
+            'identity'        => $identity['type'],
             'quota'           => ['remaining_today' => $quota->remaining($identity['type'], $identity['key'])],
+        ];
+
+        // Anonim kullanici gunluk hakkini bitirdiyse cozum yolunu goster:
+        // giris yap (zaten uyeyse) veya ucretsiz uye ol.
+        if ($route === 'quota' && $identity['type'] === 'anon') {
+            $out['cta'] = self::authCta($lang);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Giris / ucretsiz uyelik baglantilari. 'url' alani geriye donuk uyumluluk
+     * icin korunur (eski widget yalnizca onu okuyordu).
+     *
+     * @return array{type:string,url:string,login_url:string,register_url:string}
+     */
+    private static function authCta(string $lang): array
+    {
+        $auth = (array) (self::$config['auth_urls'] ?? []);
+
+        return [
+            'type'         => 'register',
+            'url'          => (string) (self::$config['register_url'][$lang] ?? self::$config['register_url']['tr'] ?? ''),
+            'login_url'    => (string) ($auth['login'] ?? ''),
+            'register_url' => (string) ($auth['register'] ?? ''),
         ];
     }
 }

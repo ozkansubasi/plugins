@@ -298,4 +298,12 @@ return [
         'tr' => 'https://numistr.org/tr/abonelikler',
         'en' => 'https://numistr.org/en/plans',
     ],
+
+    // Web girisi/kaydi = Auth0 (plg_system_numistrauth). Widget bu adreslere
+    // kendi sayfa yolunu 'return' parametresi olarak ekler; boylece kullanici
+    // giristen sonra bulundugu sayfaya doner ve ayni konusmaya devam eder.
+    'auth_urls' => [
+        'login'    => '/index.php?option=com_ajax&plugin=numistrauth&format=raw&task=login',
+        'register' => '/index.php?option=com_ajax&plugin=numistrauth&format=raw&task=signup',
+    ],
 ];

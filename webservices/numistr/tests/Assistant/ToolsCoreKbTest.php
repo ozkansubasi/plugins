@@ -152,3 +152,16 @@ check('models configured', $cfg['models']['classify'] === 'gemini-3.7-flash' && 
 check('every model has a cost row', isset($cfg['costs'][$cfg['models']['classify']], $cfg['costs'][$cfg['models']['site']], $cfg['costs'][$cfg['models']['tools']]));
 check('prompts forbid counts (TR)', stripos($cfg['prompts']['tr']['rules'], 'sayisi verme') !== false);
 check('prompts forbid counts (EN)', stripos($cfg['prompts']['en']['rules'], 'NEVER state total') !== false);
+
+// ---- Faz 2b/7: giris + ucretsiz uyelik baglantilari ----
+check('auth_urls configured', isset($cfg['auth_urls']['login'], $cfg['auth_urls']['register']));
+check('auth_urls point at numistrauth (Auth0 web girisi)',
+    strpos((string) $cfg['auth_urls']['login'], 'plugin=numistrauth') !== false
+    && strpos((string) $cfg['auth_urls']['login'], 'task=login') !== false
+    && strpos((string) $cfg['auth_urls']['register'], 'task=signup') !== false);
+check('auth_urls are relative (return parametresi ile ayni kokene doner)',
+    strpos((string) $cfg['auth_urls']['login'], '/index.php') === 0);
+check('limits define user and pro tiers', isset($cfg['limits']['anon'], $cfg['limits']['user'], $cfg['limits']['pro']));
+check('user tier is more generous than anon',
+    $cfg['limits']['user']['daily_messages'] > $cfg['limits']['anon']['daily_messages']
+    && $cfg['limits']['pro']['daily_messages'] > $cfg['limits']['user']['daily_messages']);

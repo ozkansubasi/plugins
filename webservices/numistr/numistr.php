@@ -146,6 +146,73 @@ class PlgWebservicesNumistr extends CMSPlugin
     }
 
     /**
+     * Site uygulamasi koprusu (com_ajax) — ADR-003 Faz 2b, parca 7.
+     *
+     * Widget dogrudan /api/index.php'yi cagirdiginda istek Joomla API
+     * uygulamasina duser; orada site oturum cerezi kimlik sayilmaz, yani
+     * siteye giris yapmis kullanici asistanda ANONIM gorunur (dogrulandi:
+     * /api/index.php/v1/user/profile giris yapmisken de 401 donuyor).
+     *
+     * Bu kopru istegi SITE uygulamasinda karsilar; orada oturum vardir, bu
+     * yuzden AssistantController::resolveIdentity() uye/Pro kimligini
+     * kendiliginden cozer. Kota/abuse/pre-filter zinciri ayni controller
+     * icinde calistigi icin atlanmaz.
+     *
+     * URL: /index.php?option=com_ajax&group=webservices&plugin=numistr&format=json&task=...
+     * NOT: group=webservices SART — webservices eklenti grubu site
+     * uygulamasinda kendiliginden yuklenmez.
+     */
+    public function onAjaxNumistr()
+    {
+        $app    = Factory::getApplication();
+        $task   = strtolower(trim((string) $app->input->getCmd('task', '')));
+        $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+
+        if (!class_exists('AssistantController')) {
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Assistant not deployed');
+            return;
+        }
+
+        $this->dbg('ajax-' . ($task !== '' ? $task : 'empty'), (string) ($_SERVER['REQUEST_URI'] ?? ''));
+
+        switch ($task) {
+            case 'assistant.chat':
+                // CSRF: yalnizca JSON govde kabul edilir. Basit (form) cross-site
+                // POST'lar boylece elenir; JSON istegi CORS on-kontrolu tetikler ve
+                // ACAO "*" oldugu icin tarayici kimlik bilgisi (cerez) gondermez.
+                if ($method !== 'POST') {
+                    $this->responseHelper->sendError(405, 'Method Not Allowed', 'Use POST with JSON body');
+                    return;
+                }
+
+                if (stripos((string) ($_SERVER['CONTENT_TYPE'] ?? ''), 'application/json') === false) {
+                    $this->responseHelper->sendError(415, 'Unsupported Media Type', 'Content-Type: application/json required');
+                    return;
+                }
+
+                AssistantController::chat();
+                return;
+
+            case 'assistant.conversation':
+                $id = (int) $app->input->getInt('id', 0);
+
+                if ($id <= 0) {
+                    $this->responseHelper->sendError(400, 'Bad Request', 'id required');
+                    return;
+                }
+
+                AssistantController::conversation($id);
+                return;
+
+            case 'assistant.health':
+                AssistantController::health();
+                return;
+        }
+
+        $this->responseHelper->sendError(400, 'Bad Request', 'Unknown task');
+    }
+
+    /**
      * Ana route handler
      */
     public function onBeforeApiRoute($event): void
