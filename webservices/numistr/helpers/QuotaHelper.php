@@ -189,6 +189,151 @@ class QuotaHelper
     }
 
     /**
+     * Adil kullanim / kotuye kullanim korumasi — "sinirsiz" Pro'nun ucunu kapatir.
+     *
+     * Neden ayri bir katman: aylik kota (canScan) Pro'da fiilen sinirsizdir, yani
+     * tek bir hesapla sabahtan aksama kadar tarama yapmak ya da hesabi paylasip
+     * hacmi katlamak mumkundu. Sektor standardi "sinirsiz" planlarda da pencere
+     * bazli tavan koymaktir: dakika/saat burst'u otomatik betikleri, gunluk tavan
+     * ise paylasimin ekonomisini durdurur. Gercek bir koleksiyoncu gunde 100
+     * sikke fotograflamaz; 5 kisiye dagitilmis bir hesap bunu gorur.
+     *
+     * IP ile engelleme BILINCLI olarak yapilmiyor: CGNAT, dinamik ev IP'si, VPN ve
+     * seyahat yuzunden mesru kullaniciyi cezalandirir, paylasimi ise ayni evde
+     * yakalayamaz. IP yalnizca inceleme sinyali olarak loglanir.
+     *
+     * @param   User  $user  Giris yapmis kullanici
+     *
+     * @return  array  ['allowed'=>bool,'scope'=>''|'minute'|'hour'|'day',
+     *                  'limit'=>int,'used'=>int,'retry_after'=>int,'counts'=>array,'measured'=>bool]
+     */
+    public function checkRateLimits(User $user)
+    {
+        $limits = $this->rateLimitConfig();
+        $counts = $this->recentScanCounts((int) $user->id);
+
+        if ($counts === null) {
+            // Sayim yapilamadi (tablo yok / SQL hatasi). Tanimayi kesmiyoruz ama
+            // korumanin CALISMADIGI acikca loglaniyor — sessizce devre disi kalmasin.
+            $this->logRateIssue('sayim yapilamadi: numistr_recognition_requests okunamadi');
+
+            return array(
+                'allowed' => true, 'scope' => '', 'limit' => 0, 'used' => 0,
+                'retry_after' => 0, 'counts' => array(), 'measured' => false
+            );
+        }
+
+        $decision = self::rateDecision($counts, $limits);
+        $decision['counts']   = $counts;
+        $decision['measured'] = true;
+
+        return $decision;
+    }
+
+    /**
+     * Saf karar fonksiyonu (test edilebilir olsun diye ayri): sayimlar ve limitler
+     * verildiginde hangi pencerenin asildigini soyler. En dar pencere once bakilir,
+     * boylece kullaniciya en kisa bekleme suresi bildirilir.
+     *
+     * @param   array  $counts  ['minute'=>int,'hour'=>int,'day'=>int]
+     * @param   array  $limits  ayni anahtarlar; 0 veya eksi = o pencere kapali
+     *
+     * @return  array  ['allowed'=>bool,'scope'=>string,'limit'=>int,'used'=>int,'retry_after'=>int]
+     */
+    public static function rateDecision(array $counts, array $limits)
+    {
+        $windows = array(
+            'minute' => 60,
+            'hour'   => 3600,
+            'day'    => 86400,
+        );
+
+        foreach ($windows as $scope => $seconds) {
+            $limit = isset($limits[$scope]) ? (int) $limits[$scope] : 0;
+            $used  = isset($counts[$scope]) ? (int) $counts[$scope] : 0;
+
+            if ($limit > 0 && $used >= $limit) {
+                return array(
+                    'allowed'     => false,
+                    'scope'       => $scope,
+                    'limit'       => $limit,
+                    'used'        => $used,
+                    'retry_after' => $seconds,
+                );
+            }
+        }
+
+        return array('allowed' => true, 'scope' => '', 'limit' => 0, 'used' => 0, 'retry_after' => 0);
+    }
+
+    /**
+     * @return  array  ['minute'=>int,'hour'=>int,'day'=>int]
+     */
+    private function rateLimitConfig()
+    {
+        $cfg = isset($this->config['QUOTA']['rate_limits']) ? (array) $this->config['QUOTA']['rate_limits'] : array();
+
+        return array(
+            'minute' => isset($cfg['per_minute']) ? (int) $cfg['per_minute'] : 6,
+            'hour'   => isset($cfg['per_hour'])   ? (int) $cfg['per_hour']   : 60,
+            'day'    => isset($cfg['per_day'])    ? (int) $cfg['per_day']    : 100,
+        );
+    }
+
+    /**
+     * Son 24 saatteki tarama sayimlari. Tek sorgu, idx_user_timestamp uzerinden
+     * ve 1 gunluk pencereyle sinirli.
+     *
+     * @return  array|null  null = olculemedi
+     */
+    private function recentScanCounts($userId)
+    {
+        if ($userId <= 0) {
+            return array('minute' => 0, 'hour' => 0, 'day' => 0);
+        }
+
+        try {
+            $db = $this->db !== null ? $this->db : Factory::getDbo();
+
+            $db->setQuery(
+                'SELECT'
+                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 60 SECOND) THEN 1 ELSE 0 END) AS c_minute,'
+                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 HOUR) THEN 1 ELSE 0 END) AS c_hour,'
+                . ' COUNT(*) AS c_day'
+                . ' FROM ' . $db->quoteName('numistr_recognition_requests')
+                . ' WHERE ' . $db->quoteName('user_id') . ' = ' . (int) $userId
+                . ' AND ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 DAY)'
+            );
+
+            $row = $db->loadAssoc();
+
+            if (!is_array($row)) {
+                return array('minute' => 0, 'hour' => 0, 'day' => 0);
+            }
+
+            return array(
+                'minute' => (int) $row['c_minute'],
+                'hour'   => (int) $row['c_hour'],
+                'day'    => (int) $row['c_day'],
+            );
+        } catch (\Throwable $e) {
+            $this->logRateIssue($e->getMessage());
+
+            return null;
+        }
+    }
+
+    private function logRateIssue($message)
+    {
+        try {
+            \Joomla\CMS\Log\Log::addLogger(array('text_file' => 'numistr_quota.php'), \Joomla\CMS\Log\Log::ALL, array('numistr-quota'));
+            \Joomla\CMS\Log\Log::add('[rate-limit] ' . $message, \Joomla\CMS\Log\Log::WARNING, 'numistr-quota');
+        } catch (\Throwable $e) {
+            // sessiz gec: loglama hatasi tanimayi engellememeli
+        }
+    }
+
+    /**
      * Consume one scan from user's quota
      *
      * @param   User  $user  User object

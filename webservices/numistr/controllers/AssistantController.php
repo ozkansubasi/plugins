@@ -557,11 +557,13 @@ class AssistantController
 
             $response->sendJson([
                 'ok'         => false,
-                'reason'     => $code === 'QUOTA_EXCEEDED' ? 'scan_quota' : 'error',
+                'reason'     => $code === 'QUOTA_EXCEEDED' ? 'scan_quota' : ($code === 'RATE_LIMITED' ? 'rate_limit' : 'error'),
                 'identity'   => $identity['type'],
                 'answer'     => $code === 'QUOTA_EXCEEDED'
                     ? self::msg($lang, 'recognize_quota')
-                    : (string) ($result['error']['message'] ?? ''),
+                    : ($code === 'RATE_LIMITED'
+                        ? self::msg($lang, 'recognize_rate')
+                        : (string) ($result['error']['message'] ?? '')),
                 'scan_quota' => $result['quota'] ?? null,
             ], true);
             return;

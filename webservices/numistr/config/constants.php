@@ -205,5 +205,18 @@ return [
         'free_limit' => 10,        // Free tier aylık limit
         'pro_limit' => -1,         // Pro tier (-1 = unlimited)
         'reset_day' => 1,          // Ayın kaçında reset (1 = ayın ilk günü)
+
+        // Adil kullanım tavanı — "sınırsız" Pro'nun açık ucunu kapatır.
+        // Tüm kademelere uygulanır (ücretsiz kademe zaten aylık 10 ile sınırlı;
+        // dakika/saat penceresi orada da otomatik betikleri durdurur).
+        // Bir pencereyi kapatmak için 0 yaz.
+        //   minute → betik/burst koruması (insan bu hızda fotoğraf çekemez)
+        //   hour   → yoğun kataloglama seansına yer bırakır
+        //   day    → hesap paylaşımının ekonomisini durdurur
+        'rate_limits' => [
+            'per_minute' => 6,
+            'per_hour'   => 60,
+            'per_day'    => 100,
+        ],
     ],
 ];

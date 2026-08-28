@@ -245,6 +245,7 @@ return [
             'cta_register' => 'Elinizdeki bir sikkeyi fotografla tanimlamak icin ucretsiz uye olup AnatolianCoins uygulamasini kullanabilirsiniz.',
             'recognize_login' => 'Fotograftan sikke tanima uyelere ozeldir. Ucretsiz uye olun ya da giris yapin; aylik 10 tanima hakkiniz olur.',
             'recognize_quota' => 'Bu ayki tanima hakkiniz doldu. Pro uyelikte tanima sinirsizdir; ayrintilar /tr/abonelikler sayfasinda.',
+            'recognize_rate' => 'Cok hizli tanima yapiyorsunuz. Adil kullanim siniri geregi kisa bir sure bekleyip tekrar deneyin.',
         ],
         'en' => [
             'other'        => 'I am the NumisTR assistant; I can only help with ancient Anatolian coins, ancient settlements, numismatic terms and site/membership questions. Could you rephrase your question within that scope?',
@@ -261,6 +262,7 @@ return [
             'cta_register' => 'To identify a coin from a photo, register for free and use the AnatolianCoins app.',
             'recognize_login' => 'Photo recognition is for members. Register for free or sign in — you get 10 recognitions per month.',
             'recognize_quota' => 'You have used all your recognitions for this month. Pro membership has unlimited recognition; details at /en/plans.',
+            'recognize_rate' => 'You are running recognitions very quickly. Fair-use limits apply — please wait a moment and try again.',
         ],
     ],
 

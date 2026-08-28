@@ -60,7 +60,18 @@ class RecognitionController
                     return;
                 }
 
-                self::sendError($result['error']['message'], (int) $result['status']);
+                $errorCode = isset($result['error']['code']) ? (string) $result['error']['code'] : 'ERROR';
+                $extra     = array();
+
+                if ($errorCode === 'RATE_LIMITED' && isset($result['rate'])) {
+                    $extra['rate'] = array(
+                        'scope'       => $result['rate']['scope'],
+                        'limit'       => $result['rate']['limit'],
+                        'retry_after' => $result['rate']['retry_after'],
+                    );
+                }
+
+                self::sendError($result['error']['message'], (int) $result['status'], $errorCode, $extra);
                 return;
             }
 
@@ -118,6 +129,28 @@ class RecognitionController
                     'code' => 'QUOTA_EXCEEDED',
                     'message' => 'Monthly scan limit reached. Upgrade to Pro for unlimited scans.'
                 ),
+                'quota' => array(
+                    'used' => $quotaStatus['used'],
+                    'limit' => $quotaStatus['limit'],
+                    'tier' => $quotaStatus['tier'],
+                    'reset_date' => $quotaStatus['reset_date']
+                )
+            );
+        }
+
+        // 1b. Adil kullanim tavani (dakika/saat/gun). Aylik kotadan AYRI:
+        // Pro'da aylik kota fiilen sinirsiz oldugu icin asil koruma burasi.
+        $rate = $quotaHelper->checkRateLimits($user);
+
+        if (empty($rate['allowed'])) {
+            return array(
+                'ok' => false,
+                'status' => 429,
+                'error' => array(
+                    'code' => 'RATE_LIMITED',
+                    'message' => 'Too many recognition requests. Please slow down and try again later.'
+                ),
+                'rate' => $rate,
                 'quota' => array(
                     'used' => $quotaStatus['used'],
                     'limit' => $quotaStatus['limit'],
@@ -196,6 +229,12 @@ class RecognitionController
                 'reset_date' => $updatedQuotaStatus['reset_date']
             ),
             'request_id' => 'req_' . substr($imageHash, 0, 16),
+            // Korumanin gercekten OLCULDUGU gorunur olsun (sessizce devre disi
+            // kalmasin): measured=false ise sayim yapilamamis demektir.
+            'rate' => array(
+                'measured' => !empty($rate['measured']),
+                'counts'   => isset($rate['counts']) ? $rate['counts'] : array(),
+            ),
             'raw' => $aiResults
         );
     }
@@ -237,13 +276,16 @@ class RecognitionController
      *
      * @return  void
      */
-    private static function sendError($message, $code = 400)
+    private static function sendError($message, $code = 400, $errorCode = 'ERROR', array $extra = array())
     {
         $response = array(
             'success' => false,
-            'error' => array(
-                'code' => 'ERROR',
-                'message' => $message
+            'error' => array_merge(
+                array(
+                    'code' => $errorCode,
+                    'message' => $message
+                ),
+                $extra
             )
         );
 

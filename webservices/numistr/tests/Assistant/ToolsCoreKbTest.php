@@ -165,6 +165,24 @@ check('limits define user and pro tiers', isset($cfg['limits']['anon'], $cfg['li
 check('recognize messages exist (TR+EN)',
     isset($cfg['messages']['tr']['recognize_login'], $cfg['messages']['tr']['recognize_quota'],
           $cfg['messages']['en']['recognize_login'], $cfg['messages']['en']['recognize_quota']));
+// ---- Adil kullanim tavani (QuotaHelper::rateDecision saf karar fonksiyonu) ----
+require_once $root . '/helpers/QuotaHelper.php';
+$rl = ['minute' => 6, 'hour' => 60, 'day' => 100];
+$d = QuotaHelper::rateDecision(['minute' => 0, 'hour' => 0, 'day' => 0], $rl);
+check('rate: bos sayimda izin verilir', $d['allowed'] === true && $d['scope'] === '');
+$d = QuotaHelper::rateDecision(['minute' => 6, 'hour' => 10, 'day' => 10], $rl);
+check('rate: dakika tavani engeller', $d['allowed'] === false && $d['scope'] === 'minute' && $d['retry_after'] === 60);
+$d = QuotaHelper::rateDecision(['minute' => 1, 'hour' => 60, 'day' => 61], $rl);
+check('rate: saat tavani engeller', $d['allowed'] === false && $d['scope'] === 'hour' && $d['retry_after'] === 3600);
+$d = QuotaHelper::rateDecision(['minute' => 1, 'hour' => 2, 'day' => 100], $rl);
+check('rate: gun tavani engeller', $d['allowed'] === false && $d['scope'] === 'day' && $d['retry_after'] === 86400);
+$d = QuotaHelper::rateDecision(['minute' => 5, 'hour' => 59, 'day' => 99], $rl);
+check('rate: tavanin bir altinda izin verilir', $d['allowed'] === true);
+$d = QuotaHelper::rateDecision(['minute' => 999, 'hour' => 999, 'day' => 999], ['minute' => 0, 'hour' => 0, 'day' => 0]);
+check('rate: 0 limit = pencere kapali', $d['allowed'] === true);
+$d = QuotaHelper::rateDecision(['minute' => 6, 'hour' => 60, 'day' => 100], $rl);
+check('rate: en dar pencere once bildirilir', $d['scope'] === 'minute');
+
 check('recognize quota message points at Pro page',
     strpos((string) $cfg['messages']['tr']['recognize_quota'], '/tr/abonelikler') !== false
     && strpos((string) $cfg['messages']['en']['recognize_quota'], '/en/plans') !== false);

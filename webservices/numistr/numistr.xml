@@ -2,7 +2,7 @@
 <extension type="plugin" group="webservices" method="upgrade" version="4.0">
   <name>plg_webservices_numistr</name>
   <author>NumisTR</author>
-  <version>1.5.2</version>
+  <version>1.6.0</version>
   <creationDate>2025-01-11</creationDate>
   <description>NumisTR REST API Plugin - Modular architecture with authentication, variants, regions, materials, statistics, facets and suggestions endpoints.</description>
   
