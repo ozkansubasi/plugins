@@ -109,7 +109,7 @@ Uygulamada ön yüz (ve isteğe bağlı arka yüz) fotoğrafı çekilir; yapay z
 - **Dinast**: Yerel hanedan yöneticisi (örn. Likya dinastları).
 
 ## 9. Sık sorulan sorular (15)
-1. **NumisTR ücretli mi?** Siteyi gezmek ücretsiz. Yalnızca uygulamadaki sınırsız tanıma ve ek özellikler Pro üyelik ister.
+1. **NumisTR ücretli mi?** Siteyi gezmek ücretsiz. Yalnızca yüksek kapasiteli tanıma ve ek özellikler Pro üyelik ister.
 2. **Elimdeki sikkeyi nasıl tanıtırım?** AnatolianCoins uygulamasını indirip ücretsiz kayıt olun; kamerayla fotoğraflayın, en yakın eşleşmeler listelenir. Ayda 10 tarama ücretsizdir.
 3. **Sikkemin değeri nedir?** NumisTR değerleme ve alım-satım yapmaz. Değer için yetkili müzayede evine veya uzmana başvurun.
 4. **Sikke satın alabilir miyim / satabilir miyim?** Hayır, NumisTR bir satış platformu değildir.

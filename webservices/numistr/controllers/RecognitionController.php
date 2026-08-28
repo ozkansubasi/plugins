@@ -127,7 +127,7 @@ class RecognitionController
                 'status' => 429,
                 'error' => array(
                     'code' => 'QUOTA_EXCEEDED',
-                    'message' => 'Monthly scan limit reached. Upgrade to Pro for unlimited scans.'
+                    'message' => 'Monthly scan limit reached. Upgrade to Pro for high-capacity recognition.'
                 ),
                 'quota' => array(
                     'used' => $quotaStatus['used'],
@@ -255,7 +255,7 @@ class RecognitionController
             'success' => false,
             'error' => array(
                 'code' => 'QUOTA_EXCEEDED',
-                'message' => 'Monthly scan limit reached. Upgrade to Pro for unlimited scans.',
+                'message' => 'Monthly scan limit reached. Upgrade to Pro for high-capacity recognition.',
                 'quota' => array(
                     'used' => $quotaStatus['used'],
                     'limit' => $quotaStatus['limit'],

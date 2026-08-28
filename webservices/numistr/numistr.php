@@ -2035,7 +2035,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $remaining = $scanLimit - $scansUsed;
 
             if ($remaining <= 0 && !$isPro) {
-                $this->responseHelper->sendError(429, 'Quota Exceeded', 'Monthly scan limit reached. Upgrade to Pro for unlimited scans.');
+                $this->responseHelper->sendError(429, 'Quota Exceeded', 'Monthly scan limit reached. Upgrade to Pro for high-capacity recognition.');
                 return;
             }
 

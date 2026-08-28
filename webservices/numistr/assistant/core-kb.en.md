@@ -109,7 +109,7 @@ Photograph the obverse (and optionally the reverse) in the app; the AI performs 
 - **Dynast**: a local hereditary ruler (e.g. the Lycian dynasts).
 
 ## 9. Frequently asked questions (15)
-1. **Is NumisTR paid?** Browsing is free. Only unlimited recognition and extra features in the app require Pro.
+1. **Is NumisTR paid?** Browsing is free. Only high-capacity recognition and extra features require Pro.
 2. **How do I identify my coin?** Install the AnatolianCoins app, register for free, photograph the coin; the closest matches are listed. 10 scans per month are free.
 3. **What is my coin worth?** NumisTR does not appraise or trade coins. Consult an auction house or expert for valuation.
 4. **Can I buy or sell coins here?** No, NumisTR is not a marketplace.
