@@ -18,7 +18,100 @@ class NumisTRRateLimiter
     }
     
     /**
-     * Rate limit kontrolü
+     * Onbellek denetleyicisi.
+     *
+     * 🔴 2026-08-28'de bulunan hata: burada `Factory::getCache('numistr_api', 'file')`
+     * cagriliyordu. Joomla'da ikinci parametre DEPOLAMA degil DENETLEYICI TIPIdir
+     * (callback|output|page|view); 'file' diye bir denetleyici yoktur. Cagri istisna
+     * atiyor, cagiranlardaki try/catch fail-open donuyordu — yani bu eklentideki
+     * TUM hiz sinirlari (stats, ticker, recognition, university-application,
+     * locations) 2025'ten beri hic uygulanmiyordu. Canlida olculdu: /v1/stats
+     * 20/dk sinirina ragmen 25 istegin tamamini 200 ile karsiladi.
+     *
+     * Ayrica `caching => true` veriliyor: Joomla'nin genel "System Cache" ayari
+     * kapaliysa Factory::getCache() sessizce devre disi bir denetleyici doner ve
+     * sinir yine calismaz. Hiz siniri, sitenin onbellek tercihinden bagimsiz olmali.
+     */
+    private function cacheController(string $group)
+    {
+        $options = array(
+            'defaultgroup' => $group,
+            'caching'      => true,
+            'lifetime'     => 1440, // dk; asil pencere kontrolu degerin icindeki damgada
+        );
+
+        try {
+            return Factory::getContainer()
+                ->get(\Joomla\CMS\Cache\CacheControllerFactoryInterface::class)
+                ->createCacheController('output', $options);
+        } catch (\Throwable $e) {
+            // Eski surum / container yoksa: gecerli bir denetleyici tipiyle dene.
+            $cache = Factory::getCache($group, 'output');
+
+            if (method_exists($cache, 'setCaching')) {
+                $cache->setCaching(true);
+            }
+
+            return $cache;
+        }
+    }
+
+    /**
+     * Pencere damgali sayac. Degerin ICINDE pencere kimligi tutulur; boylece
+     * Joomla onbellek lifetime biriminin (saniye mi dakika mi) surume gore
+     * degismesi sayaci bozmaz — pencere degisince sayac sifirlanir.
+     *
+     * @param   string  $group   Onbellek grubu
+     * @param   string  $key     Sayac anahtari
+     * @param   string  $window  Pencere kimligi (ornegin dakika no ya da tarih)
+     * @param   int     $max     Tavan (0 veya eksi = kapali)
+     *
+     * @return  bool  Istek yapilabilir mi?
+     */
+    private function bumpCounter(string $group, string $key, string $window, int $max): bool
+    {
+        if ($max <= 0) {
+            return true;
+        }
+
+        try {
+            $cache = $this->cacheController($group);
+            $row   = $cache->get($key);
+
+            if (!is_array($row) || !isset($row['w'], $row['c']) || $row['w'] !== $window) {
+                $cache->store(array('w' => $window, 'c' => 1), $key);
+
+                return true;
+            }
+
+            if ((int) $row['c'] >= $max) {
+                return false;
+            }
+
+            $cache->store(array('w' => $window, 'c' => (int) $row['c'] + 1), $key);
+
+            return true;
+        } catch (\Throwable $e) {
+            // Onbellek gercekten kullanilamiyorsa istegi kesme (fail-open), ama
+            // sessiz kalma: bu durumda koruma yok demektir.
+            $this->logIssue('sayac yazilamadi (' . $group . '): ' . $e->getMessage());
+
+            return true;
+        }
+    }
+
+    private function logIssue(string $message): void
+    {
+        try {
+            \Joomla\CMS\Log\Log::addLogger(array('text_file' => 'numistr_ratelimit.php'), \Joomla\CMS\Log\Log::ALL, array('numistr-rate'));
+            \Joomla\CMS\Log\Log::add($message, \Joomla\CMS\Log\Log::WARNING, 'numistr-rate');
+        } catch (\Throwable $e) {
+            // yoksay
+        }
+    }
+
+    /**
+     * Rate limit kontrolü (dakika penceresi)
      *
      * @param string $endpoint Endpoint adı
      * @param int $maxRequests Dakikada maksimum istek
@@ -26,35 +119,12 @@ class NumisTRRateLimiter
      */
     public function checkLimit(string $endpoint, int $maxRequests = 60): bool
     {
-        $ip = $this->getClientIP();
+        $ip  = $this->getClientIP();
         $key = 'rate_limit_' . md5($ip . '_' . $endpoint);
 
-        try {
-            $cache = Factory::getCache('numistr_api', 'file');
-            $cache->setLifeTime($this->cacheLifetime);
-
-            $count = $cache->get($key);
-
-            if ($count === false || $count === null) {
-                // İlk istek
-                $cache->store(1, $key);
-                return true;
-            }
-
-            if ($count >= $maxRequests) {
-                return false;
-            }
-
-            // Sayacı artır
-            $cache->store($count + 1, $key);
-            return true;
-
-        } catch (\Exception $e) {
-            // Cache hatası varsa izin ver (fail-open)
-            return true;
-        }
+        return $this->bumpCounter('numistr_api', $key, 'm' . floor(time() / 60), $maxRequests);
     }
-    
+
     /**
      * Hesap/istemci basina GUNLUK istek tavani — toplu kazimaya karsi.
      *
@@ -63,10 +133,6 @@ class NumisTRRateLimiter
      * ~11.000 gorselden olusuyor; asil varlik bu (ADR-005). Gunluk tavan, normal
      * uygulama kullaniminin cok ustunde ama toptan kopyalamanin cok altinda durur.
      *
-     * TTL yerine DEGERIN ICINDE tarih damgasi tutuluyor: Joomla onbellek katmaninin
-     * lifetime birimi (saniye mi dakika mi) surume gore degisebiliyor; tarih
-     * karsilastirmasi bu belirsizlikten bagimsiz calisir.
-     *
      * @param   string  $subject     Kimlik anahtari (kullanici jetonu ya da IP)
      * @param   int     $maxPerDay   0 veya eksi = tavan kapali
      *
@@ -74,36 +140,11 @@ class NumisTRRateLimiter
      */
     public function checkDailyLimit(string $subject, int $maxPerDay): bool
     {
-        if ($maxPerDay <= 0 || $subject === '') {
+        if ($subject === '') {
             return true;
         }
 
-        $key   = 'daily_' . md5($subject);
-        $today = gmdate('Y-m-d');
-
-        try {
-            $cache = Factory::getCache('numistr_api_daily', 'file');
-            $cache->setLifeTime(1440);
-
-            $row = $cache->get($key);
-
-            if (!is_array($row) || !isset($row['d'], $row['c']) || $row['d'] !== $today) {
-                $cache->store(array('d' => $today, 'c' => 1), $key);
-
-                return true;
-            }
-
-            if ((int) $row['c'] >= $maxPerDay) {
-                return false;
-            }
-
-            $cache->store(array('d' => $today, 'c' => (int) $row['c'] + 1), $key);
-
-            return true;
-        } catch (\Exception $e) {
-            // Onbellek hatasi istegi kesmesin (fail-open) — dakika bazli sinir ayakta.
-            return true;
-        }
+        return $this->bumpCounter('numistr_api_daily', 'daily_' . md5($subject), gmdate('Y-m-d'), $maxPerDay);
     }
 
     /**
@@ -116,14 +157,12 @@ class NumisTRRateLimiter
         }
 
         try {
-            $cache = Factory::getCache('numistr_api_daily', 'file');
-            $cache->setLifeTime(1440);
-            $row = $cache->get('daily_' . md5($subject));
+            $row = $this->cacheController('numistr_api_daily')->get('daily_' . md5($subject));
 
-            if (is_array($row) && isset($row['d'], $row['c']) && $row['d'] === gmdate('Y-m-d')) {
+            if (is_array($row) && isset($row['w'], $row['c']) && $row['w'] === gmdate('Y-m-d')) {
                 return (int) $row['c'];
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // yoksay
         }
 
@@ -139,15 +178,14 @@ class NumisTRRateLimiter
         $key = 'rate_limit_' . md5($ip . '_' . $endpoint);
 
         try {
-            $cache = Factory::getCache('numistr_api', 'file');
-            $count = $cache->get($key);
+            $row = $this->cacheController('numistr_api')->get($key);
 
-            if ($count === false || $count === null) {
+            if (!is_array($row) || !isset($row['w'], $row['c']) || $row['w'] !== 'm' . floor(time() / 60)) {
                 return $maxRequests;
             }
 
-            return max(0, $maxRequests - $count);
-        } catch (\Exception $e) {
+            return max(0, $maxRequests - (int) $row['c']);
+        } catch (\Throwable $e) {
             return $maxRequests;
         }
     }
