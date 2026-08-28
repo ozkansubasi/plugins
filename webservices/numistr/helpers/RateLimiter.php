@@ -56,6 +56,81 @@ class NumisTRRateLimiter
     }
     
     /**
+     * Hesap/istemci basina GUNLUK istek tavani — toplu kazimaya karsi.
+     *
+     * Dakika bazli sinir ani yuku dengeler ama sabirli bir kaziyiciyi durdurmaz:
+     * dakikada 60 istekle gunde 86.400 istek yapilabilir. Katalog ~10.000 sikke ve
+     * ~11.000 gorselden olusuyor; asil varlik bu (ADR-005). Gunluk tavan, normal
+     * uygulama kullaniminin cok ustunde ama toptan kopyalamanin cok altinda durur.
+     *
+     * TTL yerine DEGERIN ICINDE tarih damgasi tutuluyor: Joomla onbellek katmaninin
+     * lifetime birimi (saniye mi dakika mi) surume gore degisebiliyor; tarih
+     * karsilastirmasi bu belirsizlikten bagimsiz calisir.
+     *
+     * @param   string  $subject     Kimlik anahtari (kullanici jetonu ya da IP)
+     * @param   int     $maxPerDay   0 veya eksi = tavan kapali
+     *
+     * @return  bool  Istek yapilabilir mi?
+     */
+    public function checkDailyLimit(string $subject, int $maxPerDay): bool
+    {
+        if ($maxPerDay <= 0 || $subject === '') {
+            return true;
+        }
+
+        $key   = 'daily_' . md5($subject);
+        $today = gmdate('Y-m-d');
+
+        try {
+            $cache = Factory::getCache('numistr_api_daily', 'file');
+            $cache->setLifeTime(1440);
+
+            $row = $cache->get($key);
+
+            if (!is_array($row) || !isset($row['d'], $row['c']) || $row['d'] !== $today) {
+                $cache->store(array('d' => $today, 'c' => 1), $key);
+
+                return true;
+            }
+
+            if ((int) $row['c'] >= $maxPerDay) {
+                return false;
+            }
+
+            $cache->store(array('d' => $today, 'c' => (int) $row['c'] + 1), $key);
+
+            return true;
+        } catch (\Exception $e) {
+            // Onbellek hatasi istegi kesmesin (fail-open) — dakika bazli sinir ayakta.
+            return true;
+        }
+    }
+
+    /**
+     * Gunluk sayacin bugunku degeri (teshis/gozlem icin).
+     */
+    public function getDailyCount(string $subject): int
+    {
+        if ($subject === '') {
+            return 0;
+        }
+
+        try {
+            $cache = Factory::getCache('numistr_api_daily', 'file');
+            $cache->setLifeTime(1440);
+            $row = $cache->get('daily_' . md5($subject));
+
+            if (is_array($row) && isset($row['d'], $row['c']) && $row['d'] === gmdate('Y-m-d')) {
+                return (int) $row['c'];
+            }
+        } catch (\Exception $e) {
+            // yoksay
+        }
+
+        return 0;
+    }
+
+    /**
      * Kalan istek sayısını döndür
      */
     public function getRemainingRequests(string $endpoint, int $maxRequests = 60): int

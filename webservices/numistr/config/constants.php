@@ -173,6 +173,17 @@ return [
         'complex_query' => 10,     // Karmaşık sorgular
         'stats' => 20,             // İstatistik endpoint'i
         'facets' => 15,            // Facet endpoint'i
+
+        // Katalog uçları (variants listesi/detayı/görselleri). 2026-08-28'e kadar
+        // bu uçlarda HİÇ dakika sınırı yoktu — kazımaya en açık yüzey burasıydı.
+        // Uygulama bir listeyi açarken kısa sürede onlarca detay/görsel isteği
+        // yapabildiği için sınır bilerek geniş; asıl koruma günlük tavan.
+        'catalog' => 120,
+
+        // Özne başına GÜNLÜK tavan (ADR-005). Özne = Bearer jeton parmak izi,
+        // yoksa IP. Normal uygulama kullanımı bunun çok altında kalır; toptan
+        // kopyalama ilk gün çarpar. 0 = kapalı.
+        'daily_per_subject' => 2000,
     ],
     
     // Query Performance Limits

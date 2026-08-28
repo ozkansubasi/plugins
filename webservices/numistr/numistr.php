@@ -129,12 +129,46 @@ class PlgWebservicesNumistr extends CMSPlugin
     /**
      * Rate limit kontrolü yap
      */
+    /**
+     * Rate limit oznesi: kimlik dogrulanmis istemcide jeton parmak izi, aksi halde IP.
+     *
+     * Neden jetonu DOGRULAMIYORUZ: burada amac kimlik degil, ayni istemciyi ayni
+     * kovaya koymak. JWT dogrulamasi her katalog istegine maliyet ekler; jetonun
+     * kendisi zaten kararli bir tanimlayicidir. Mobil operatorlerde binlerce
+     * kullanici tek IP'nin arkasinda oldugu icin (CGNAT) yalniz IP'ye bakmak
+     * mesru kullanicilari birbirinin kotasindan yerdi.
+     */
+    private function rateSubject(): string
+    {
+        $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+
+        if ($auth !== '' && stripos($auth, 'bearer ') === 0) {
+            return 'tok:' . sha1(substr($auth, 7));
+        }
+
+        return 'ip:' . sha1($_SERVER['REMOTE_ADDR'] ?? '');
+    }
+
     private function checkRateLimit(string $endpoint, int $maxRequests = null): void
     {
         if ($maxRequests === null) {
             $maxRequests = $this->config['RATE_LIMITS']['default'] ?? 60;
         }
-        
+
+        // Gunluk tavan (ADR-005): dakika bazli sinir sabirli bir kaziyiciyi
+        // durdurmaz — dakikada 60 istekle gunde 86.400 istek yapilabilir.
+        $dailyMax = (int) ($this->config['RATE_LIMITS']['daily_per_subject'] ?? 0);
+
+        if ($dailyMax > 0 && !$this->rateLimiter->checkDailyLimit($this->rateSubject(), $dailyMax)) {
+            $this->dbg('rate-daily-block', $endpoint);
+            $this->responseHelper->sendError(
+                429,
+                'Too Many Requests',
+                'Daily request limit reached (' . $dailyMax . '). Bulk extraction is not permitted; see the terms of use.'
+            );
+            exit;
+        }
+
         if (!$this->rateLimiter->checkLimit($endpoint, $maxRequests)) {
             $remaining = $this->rateLimiter->getRemainingRequests($endpoint, $maxRequests);
             $this->responseHelper->sendError(
@@ -911,6 +945,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantsList(string $uri): void
     {
         $this->dbg('variants-index', $uri);
+        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60);
         
         try {
             $app = Factory::getApplication();
@@ -1076,6 +1111,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantsFacets(string $uri): void
     {
         $this->dbg('variants-facets', $uri);
+        $this->checkRateLimit('facets', $this->config['RATE_LIMITS']['facets'] ?? 60);
         
         try {
             $app = Factory::getApplication();
@@ -1163,6 +1199,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleSuggestMints(string $uri): void
     {
         $this->dbg('suggest-mints', $uri);
+        $this->checkRateLimit('search', $this->config['RATE_LIMITS']['search'] ?? 60);
         
         try {
             $app = Factory::getApplication();
@@ -1232,6 +1269,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleSuggestAuthorities(string $uri): void
     {
         $this->dbg('suggest-authorities', $uri);
+        $this->checkRateLimit('search', $this->config['RATE_LIMITS']['search'] ?? 60);
         
         try {
             $app = Factory::getApplication();
@@ -1301,6 +1339,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantImages(string $uri, int $variantId): void
     {
         $this->dbg('variants-images', $uri);
+        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60);
         
         try {
             $app = Factory::getApplication();
@@ -1349,6 +1388,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantItem(string $uri, string $token): void
     {
         $this->dbg('variants-item', $uri);
+        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60);
         
         try {
             $app = Factory::getApplication();
