@@ -234,6 +234,9 @@ class RecognitionController
             'rate' => array(
                 'measured' => !empty($rate['measured']),
                 'counts'   => isset($rate['counts']) ? $rate['counts'] : array(),
+                // Istemci "bugun kalan tanima" yazabilsin diye tavanlar da bildirilir.
+                // ADR-005 K2 sonrasi Pro'da "sinirsiz" denmiyor; gercek sinir bu.
+                'limits'   => $quotaHelper->rateLimits(),
             ),
             'raw' => $aiResults
         );

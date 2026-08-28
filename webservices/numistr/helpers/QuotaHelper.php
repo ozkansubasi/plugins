@@ -269,6 +269,16 @@ class QuotaHelper
     /**
      * @return  array  ['minute'=>int,'hour'=>int,'day'=>int]
      */
+    /**
+     * Yapilandirilmis adil kullanim tavanlari (istemciye bildirmek icin publik).
+     *
+     * @return  array  ['minute'=>int,'hour'=>int,'day'=>int]
+     */
+    public function rateLimits()
+    {
+        return $this->rateLimitConfig();
+    }
+
     private function rateLimitConfig()
     {
         $cfg = isset($this->config['QUOTA']['rate_limits']) ? (array) $this->config['QUOTA']['rate_limits'] : array();
