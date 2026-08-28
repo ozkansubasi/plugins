@@ -358,6 +358,126 @@ class AssistantController
         }
     }
 
+    /**
+     * GET  /v1/assistant/conversations       — kimlige ait konusma listesi
+     * (kopru: task=assistant.conversations)
+     *
+     * Anonim kullanici yalnizca kendi anon_key'ine bagli konusmalari gorur;
+     * giris yapinca eski anonim konusmalari uyeye devralindigi icin
+     * (loadOrCreateConversation) listede kalmaya devam eder.
+     */
+    public static function conversations(): void
+    {
+        self::boot();
+        $response = new NumisTRResponseHelper();
+        $method   = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+
+        if ($method === 'OPTIONS') {
+            $response->sendJson(['ok' => true]);
+            return;
+        }
+
+        if ($method !== 'GET') {
+            $response->sendError(405, 'Method Not Allowed', 'Use GET');
+            return;
+        }
+
+        try {
+            $db       = Factory::getDbo();
+            $identity = self::resolveIdentity();
+
+            $where = [];
+
+            if ($identity['user_id'] !== null) {
+                $where[] = $db->quoteName('user_id') . ' = ' . (int) $identity['user_id'];
+            }
+
+            if ($identity['anon_key'] !== null && $identity['anon_key'] !== '') {
+                $where[] = $db->quoteName('anon_key') . ' = ' . $db->quote($identity['anon_key']);
+            }
+
+            if (!$where) {
+                $response->sendJson(['conversations' => [], 'identity' => $identity['type']], true);
+                return;
+            }
+
+            $db->setQuery(
+                'SELECT id, lang, title, created, last_at FROM '
+                . $db->quoteName('#__numistr_assistant_conversation')
+                . ' WHERE (' . implode(' OR ', $where) . ')'
+                . ' AND ' . $db->quoteName('archived') . ' = 0'
+                . ' ORDER BY ' . $db->quoteName('last_at') . ' DESC',
+                0,
+                20
+            );
+
+            $rows = $db->loadAssocList() ?: [];
+
+            $response->sendJson([
+                'identity'      => $identity['type'],
+                'conversations' => array_map(static function ($r) {
+                    return [
+                        'id'      => (int) $r['id'],
+                        'lang'    => $r['lang'],
+                        'title'   => $r['title'],
+                        'created' => $r['created'],
+                        'last_at' => $r['last_at'],
+                    ];
+                }, $rows),
+            ], true);
+        } catch (\Throwable $e) {
+            self::log('conversations-error', $e->getMessage());
+            $response->sendError(500, 'Internal server error');
+        }
+    }
+
+    /**
+     * Konusmayi arsivle (KVKK: kullanici kendi gecmisini kaldirabilmeli).
+     * Kopru: task=assistant.conversation.delete&id=N (POST).
+     *
+     * Satirlar SILINMEZ, archived=1 yapilir: maliyet/kota muhasebesi ve kotuye
+     * kullanim incelemesi icin kayit korunur, kullaniciya gorunmez.
+     */
+    public static function archiveConversation(int $id): void
+    {
+        self::boot();
+        $response = new NumisTRResponseHelper();
+
+        if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $response->sendError(405, 'Method Not Allowed', 'Use POST');
+            return;
+        }
+
+        try {
+            $db       = Factory::getDbo();
+            $identity = self::resolveIdentity();
+
+            $db->setQuery(
+                $db->getQuery(true)
+                    ->select(['id', 'user_id', 'anon_key'])
+                    ->from($db->quoteName('#__numistr_assistant_conversation'))
+                    ->where($db->quoteName('id') . ' = ' . (int) $id)
+            );
+            $conv = $db->loadAssoc();
+
+            if (!$conv || !self::ownsConversation($conv, $identity)) {
+                $response->sendError(404, 'Not found');
+                return;
+            }
+
+            $db->setQuery(
+                'UPDATE ' . $db->quoteName('#__numistr_assistant_conversation')
+                . ' SET ' . $db->quoteName('archived') . ' = 1'
+                . ' WHERE ' . $db->quoteName('id') . ' = ' . (int) $id
+            )->execute();
+
+            $response->sendJson(['ok' => true, 'conversation_id' => (int) $id], true);
+        } catch (\Throwable $e) {
+            self::log('conversation-archive-error', $e->getMessage());
+            $response->sendError(500, 'Internal server error');
+        }
+    }
+
     private static function ownsConversation(array $conv, array $identity): bool
     {
         if ($identity['user_id'] !== null && (int) $conv['user_id'] === (int) $identity['user_id']) {
