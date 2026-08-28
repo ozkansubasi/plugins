@@ -51,7 +51,10 @@ Her sikke "varyant" kaydı şu alanları içerir: başlık (kaynak/katalog refer
 - Siteyi gezmek, sikke listelerini ve yerleşim makalelerini okumak **ücretsizdir**, üyelik gerekmez.
 - **Ücretsiz üyelik** (site veya uygulamadan kayıt): AnatolianCoins uygulamasında ayda **10 sikke tarama** (fotoğraftan tanıma), en iyi 3 eşleşme, temel bilgi, 5 favori, 1 koleksiyon.
 - **Pro üyelik**: sınırsız tarama, en iyi 10 eşleşme, ayrıntılı bilgi, sınırsız koleksiyon, çevrimdışı veritabanı, yüksek çözünürlüklü görseller.
-- Pro fiyatı: **aylık 99,99 TL** veya **yıllık 699,99 TL**; satın alma **Google Play Store üzerinden uygulama içinden** yapılır (web ödemesi henüz yok). Abonelik Play Store hesabından yönetilir/iptal edilir.
+- Pro fiyatı: **aylık 99,99 TL** veya **yıllık 839,99 TL** (yıllıkta yaklaşık %30 tasarruf). Türkiye dışı kartlarda **aylık 3,99 €** / **yıllık 34,99 €**.
+- Pro **iki kanaldan** alınabilir: (1) **web sitesinden** — /tr/abonelikler sayfasındaki "PRO'ya Geç" butonu, ödeme iyzico altyapısıyla alınır, kart bilgisi NumisTR'de saklanmaz; (2) **AnatolianCoins uygulamasından** Google Play aboneliğiyle. Fiyatlar iki kanalda aynıdır.
+- Hesap tektir: web ve uygulama aynı üyelikle (Auth0) çalışır; hangi kanaldan alınırsa alınsın Pro her ikisinde de geçerli olur.
+- Abonelik yönetimi/iptali: web aboneliği **/tr/hesabim** sayfasından, Play aboneliği **Google Play > Abonelikler**'den iptal edilir. İptal sonrası Pro, ödenen dönemin sonuna kadar devam eder.
 - Tarama kotası her ayın 1'inde sıfırlanır.
 - Üniversite öğrencileri için ücretsiz Pro erişim programı vardır: uygulamadaki "Üniversite Başvurusu" formu ile başvurulur.
 - Uygulama girişi: Google hesabı veya e-posta/şifre (Auth0). Şifre sıfırlama uygulamadan yapılır.
@@ -109,8 +112,8 @@ Uygulamada ön yüz (ve isteğe bağlı arka yüz) fotoğrafı çekilir; yapay z
 3. **Sikkemin değeri nedir?** NumisTR değerleme ve alım-satım yapmaz. Değer için yetkili müzayede evine veya uzmana başvurun.
 4. **Sikke satın alabilir miyim / satabilir miyim?** Hayır, NumisTR bir satış platformu değildir.
 5. **Verileri ve görselleri kullanabilir miyim?** Eğitim/araştırma için kaynak göstererek evet; görseller filigranlıdır, ticari kullanım izne tabidir (Veri Kullanım Politikası sayfası).
-6. **Pro üyelik nasıl alınır?** Uygulama içinden Google Play aboneliğiyle: 99,99 TL/ay veya 699,99 TL/yıl.
-7. **Aboneliği nasıl iptal ederim?** Google Play > Abonelikler üzerinden; dönem sonuna kadar Pro devam eder.
+6. **Pro üyelik nasıl alınır?** İki yoldan: web sitesinde /tr/abonelikler sayfasından (iyzico ile ödeme) ya da uygulama içinden Google Play aboneliğiyle. Fiyat: 99,99 TL/ay veya 839,99 TL/yıl (yurt dışı kartlarda 3,99 €/ay veya 34,99 €/yıl).
+7. **Aboneliği nasıl iptal ederim?** Web'den aldıysanız /tr/hesabim sayfasından, uygulamadan aldıysanız Google Play > Abonelikler üzerinden. Her iki durumda da Pro, ödenen dönemin sonuna kadar devam eder.
 8. **iOS sürümü var mı?** Şu an Android (Google Play) yayında; iOS planlanmaktadır.
 9. **Tarama kotam ne zaman yenilenir?** Her ayın 1'inde.
 10. **Hangi bölgeler kapsanıyor?** 16 ana antik Anadolu bölgesi + Diğer (bkz. bölge listesi).

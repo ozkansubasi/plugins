@@ -51,7 +51,10 @@ There are TR and EN articles for 1,600+ ancient cities/sites. Each article cover
 - Browsing the site, coin lists and settlement articles is **free**, no account needed.
 - **Free account** (register on the site or in the app): **10 coin scans per month** in the AnatolianCoins app (photo recognition), top 3 matches, basic info, 5 favourites, 1 collection.
 - **Pro membership**: unlimited scans, top 10 matches, detailed info, unlimited collections, offline database, high-resolution images.
-- Pro price: **99.99 TL / month** or **699.99 TL / year**; purchased **inside the app via Google Play Store** (no web payment yet). Manage/cancel via your Play Store subscriptions.
+- Pro price: **€3.99 / month** or **€34.99 / year** (Turkiye: 99.99 TL / 839.99 TL; the yearly plan saves about 30%).
+- Pro can be bought through **two channels**: (1) **on the website** — the "Go PRO" button on /en/plans, payment handled by iyzico, card details are never stored by NumisTR; (2) **in the AnatolianCoins app** via a Google Play subscription. Prices are the same in both.
+- One account for both: the website and the app share the same membership (Auth0), so Pro bought in either channel applies to both.
+- Managing/cancelling: a web subscription is cancelled at **/en/my-account**, a Play subscription at **Google Play > Subscriptions**. Pro continues until the end of the paid period.
 - Scan quota resets on the 1st of every month.
 - University students can apply for free Pro access with the "University Application" form in the app.
 - App sign-in: Google account or e-mail/password (Auth0). Password reset is done from the app.
@@ -109,8 +112,8 @@ Photograph the obverse (and optionally the reverse) in the app; the AI performs 
 3. **What is my coin worth?** NumisTR does not appraise or trade coins. Consult an auction house or expert for valuation.
 4. **Can I buy or sell coins here?** No, NumisTR is not a marketplace.
 5. **May I use the data and images?** Yes for education/research with attribution; images are watermarked and commercial use needs permission (see the Data Use Policy page).
-6. **How do I get Pro?** In the app via a Google Play subscription: 99.99 TL/month or 699.99 TL/year.
-7. **How do I cancel?** Google Play > Subscriptions; Pro continues until the end of the paid period.
+6. **How do I get Pro?** Two ways: on the website at /en/plans (payment via iyzico) or in the app via a Google Play subscription. Price: €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL).
+7. **How do I cancel?** If you subscribed on the website, at /en/my-account; if in the app, via Google Play > Subscriptions. Either way Pro continues until the end of the paid period.
 8. **Is there an iOS version?** Currently Android (Google Play); iOS is planned.
 9. **When does my scan quota reset?** On the 1st of each month.
 10. **Which regions are covered?** The 16 main ancient Anatolian regions plus Other (see the region list).

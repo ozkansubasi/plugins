@@ -143,12 +143,12 @@ return [
     // first match wins; keys are lower-case substrings; answers per language
     'keyword_map' => [
         'pro uyelik' => [
-            'tr' => 'Pro uyelik mobil uygulamadan (Play Store) aylik 99,99 TL veya yillik 839,99 TL olarak alinir. Pro: sinirsiz sikke tanima, tum eslesmeler, detayli bilgi ve cevrimdisi veritabani. Ayrintilar: /tr/abonelikler',
-            'en' => 'Pro membership is purchased in the mobile app (Play Store): €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Pro gives unlimited coin recognition, all matches, detailed info and the offline database. Details: /en/plans',
+            'tr' => 'Pro uyelik iki yoldan alinabilir: web sitesinden /tr/abonelikler sayfasindaki PRO butonuyla (odeme iyzico ile) veya AnatolianCoins uygulamasindan Google Play aboneligiyle. Fiyat ayni: aylik 99,99 TL, yillik 839,99 TL. Pro: sinirsiz sikke tanima, tum eslesmeler, detayli bilgi ve cevrimdisi veritabani.',
+            'en' => 'Pro can be bought in two ways: on the website at /en/plans ("Go PRO", payment via iyzico) or in the AnatolianCoins app via Google Play. Same price either way: €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Pro gives unlimited coin recognition, all matches, detailed info and the offline database.',
         ],
         'pro membership' => [
-            'tr' => 'Pro uyelik mobil uygulamadan (Play Store) aylik 99,99 TL veya yillik 839,99 TL olarak alinir. Ayrintilar: /tr/abonelikler',
-            'en' => 'Pro membership is purchased in the mobile app (Play Store): €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Details: /en/plans',
+            'tr' => 'Pro uyelik web sitesinden (/tr/abonelikler, iyzico ile odeme) veya uygulamadan (Google Play) alinir: aylik 99,99 TL, yillik 839,99 TL.',
+            'en' => 'Pro is available on the website (/en/plans, paid via iyzico) or in the app (Google Play): €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL).',
         ],
         'kac tarama' => [
             'tr' => 'Ucretsiz uyelikte ayda 10 sikke tarama hakki vardir; Pro uyelikte sinirsizdir. Tarama icin mobil uygulamaya giris yapmaniz gerekir.',
@@ -173,6 +173,22 @@ return [
         'download the app' => [
             'tr' => 'AnatolianCoins uygulamasi Google Play Store\'da yayindadir (Android).',
             'en' => 'The AnatolianCoins app is available on Google Play (Android). iOS is planned.',
+        ],
+        'abonelik iptal' => [
+            'tr' => 'Web sitesinden aldiginiz aboneligi /tr/hesabim sayfasindan iptal edebilirsiniz; uygulamadan (Google Play) aldiysaniz Play Store > Abonelikler uzerinden. Her iki durumda da Pro, odenen donemin sonuna kadar devam eder.',
+            'en' => 'A subscription bought on the website is cancelled at /en/my-account; one bought in the app via Google Play > Subscriptions. Either way Pro continues until the end of the paid period.',
+        ],
+        'cancel subscription' => [
+            'tr' => 'Web aboneligi /tr/hesabim sayfasindan, Play aboneligi Google Play > Abonelikler uzerinden iptal edilir. Pro, odenen donemin sonuna kadar devam eder.',
+            'en' => 'Cancel a web subscription at /en/my-account, a Play subscription at Google Play > Subscriptions. Pro continues until the end of the paid period.',
+        ],
+        'hesabim' => [
+            'tr' => 'Uyelik durumunuzu, plan ve kullanim bilgilerinizi /tr/hesabim sayfasindan gorebilirsiniz (giris yapmis olmaniz gerekir).',
+            'en' => 'You can see your membership status, plan and usage at /en/my-account (sign-in required).',
+        ],
+        'my account' => [
+            'tr' => 'Uyelik ve plan bilgileriniz /tr/hesabim sayfasindadir.',
+            'en' => 'Your membership and plan details are at /en/my-account.',
         ],
         'sikke degerle' => [
             'tr' => 'NumisTR sikke degerlemesi veya alim-satim yapmaz; yalnizca akademik/numizmatik tanimlama ve bilgi saglar. Degerleme icin yetkili bir muzayede evi ya da uzmana basvurun.',

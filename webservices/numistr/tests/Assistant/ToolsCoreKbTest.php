@@ -92,8 +92,18 @@ check('TR and EN hashes differ', $tr['hash'] !== $en['hash']);
 check('hash is deterministic', $tr['hash'] === md5($tr['text']));
 check('TR KB large enough for Gemini explicit cache (>=1200 tokens est)', $tr['tokens_est'] >= 1200, (string) $tr['tokens_est']);
 check('EN KB large enough for Gemini explicit cache', $en['tokens_est'] >= 1200, (string) $en['tokens_est']);
-check('TR KB mentions Pro price', strpos($tr['text'], '99,99') !== false && strpos($tr['text'], '699,99') !== false);
-check('EN KB mentions Pro price', strpos($en['text'], '99.99') !== false);
+// Fiyat/kanal bilgisi bayatlamasin: 2026-08-28'de cekirdek KB hala '699,99' ve
+// "web odemesi henuz yok" diyordu — web aboneligi 2026-08-25'te canliya alinmisti.
+check('TR KB has current Pro price', strpos($tr['text'], '99,99') !== false && strpos($tr['text'], '839,99') !== false);
+check('TR KB has no stale 699,99 price', strpos($tr['text'], '699,99') === false);
+check('EN KB has current Pro price', strpos($en['text'], '34.99') !== false && strpos($en['text'], '3.99') !== false);
+check('EN KB has no stale 699.99 price', strpos($en['text'], '699.99') === false);
+check('TR KB mentions web purchase channel', stripos($tr['text'], 'iyzico') !== false && strpos($tr['text'], '/tr/abonelikler') !== false);
+check('EN KB mentions web purchase channel', stripos($en['text'], 'iyzico') !== false && strpos($en['text'], '/en/plans') !== false);
+check('TR KB does not claim web payment is missing', stripos($tr['text'], 'web ödemesi henüz yok') === false);
+check('EN KB does not claim web payment is missing', stripos($en['text'], 'no web payment') === false);
+check('TR KB explains web cancellation', strpos($tr['text'], '/tr/hesabim') !== false);
+check('EN KB explains web cancellation', strpos($en['text'], '/en/my-account') !== false);
 check('TR KB lists 16 regions + Diğer', strpos($tr['text'], '16. Pontus') !== false && strpos($tr['text'], '17. Diğer') !== false);
 check('TR KB has 15 FAQs', strpos($tr['text'], '15. **') !== false);
 check('KB glossary has >= 40 terms (TR)', preg_match_all('/^- \*\*/m', $tr['text']) >= 40);
