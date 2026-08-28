@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Web Auth (Auth0 OIDC login for the Joomla site)
  * @subpackage  plg_system_numistrauth
- * @version     1.1.0
+ * @version     1.2.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -34,6 +34,10 @@ class PlgSystemNumistrauth extends CMSPlugin
     protected $autoloadLanguage = true;
 
     private const SESSION_NS = 'numistrauth';
+
+    /** Authorize -> callback arasindaki azami sure (sn). Google/Auth0 ekraninda
+     *  gecirilen sure de buna dahildir; dev keys ile 16 dk olcen bir vaka var. */
+    private const STATE_TTL = 1800;
 
     /**
      * com_ajax entry point: plugin=numistrauth
@@ -149,11 +153,52 @@ class PlgSystemNumistrauth extends CMSPlugin
         $verifier = (string) $session->get(self::SESSION_NS . '.verifier', '');
         $started  = (int) $session->get(self::SESSION_NS . '.started', 0);
         $return   = (string) $session->get(self::SESSION_NS . '.return', '');
+        $retried  = (bool) $session->get(self::SESSION_NS . '.retried', false);
 
         $this->clearTransient();
 
-        if ($code === '' || $state === '' || $saved === '' || !hash_equals($saved, $state) || $verifier === '' || (time() - $started) > 900) {
-            $this->log('state-mismatch', 'state/verifier missing or expired');
+        // Oturum ve state saglam mi? (Ayri degerlendiriyoruz: "suresi gecmis" ile
+        // "oturum kayip/uyusmuyor" farkli sorunlar ve farkli cozumleri var.)
+        $sessionOk = $code !== '' && $state !== '' && $saved !== ''
+            && hash_equals($saved, $state) && $verifier !== '';
+        $expired   = $sessionOk && (time() - $started) > self::STATE_TTL;
+
+        // Suresi gecmis ama oturum saglam: kullanici Auth0/Google ekraninda uzun
+        // sure kalmis demektir (2026-08-28 olcumu: dev keys ile Google turu
+        // 16 dk 11 sn surdu, 15 dk'lik pencereyi 71 sn ile kacirdi). Bu kurtarilabilir
+        // bir durum — kullaniciyi hata sayfasina atmak yerine akisi bir kez yeniden
+        // baslatiyoruz. Auth0 oturumu artik acik oldugu icin bu genellikle aninda
+        // tamamlanir ve kullanici hicbir sey fark etmez.
+        // DONGU KORUMASI: yalnizca oturumun SAGLAM oldugu durumda yeniden deniyoruz
+        // (bayrak da oturumda tutuluyor) ve yalnizca BIR kez.
+        if ($expired && !$retried) {
+            $this->log('state-expired-retry', 'age=' . (time() - $started) . 's, akis yeniden baslatiliyor');
+
+            $session->set(self::SESSION_NS . '.retried', true);
+
+            $retryUrl = $this->canonicalRoot() . 'index.php?option=com_ajax&plugin=numistrauth&format=raw&task=login';
+
+            if ($return !== '') {
+                $retryUrl .= '&return=' . urlencode($return);
+            }
+
+            $this->app->redirect($retryUrl);
+
+            return null;
+        }
+
+        $session->clear(self::SESSION_NS . '.retried');
+
+        if (!$sessionOk || $expired) {
+            $this->log(
+                'state-mismatch',
+                'code=' . ($code !== '' ? 'var' : 'yok')
+                . ' state=' . ($state !== '' ? 'var' : 'yok')
+                . ' saved=' . ($saved !== '' ? 'var' : 'yok')
+                . ' verifier=' . ($verifier !== '' ? 'var' : 'yok')
+                . ' age=' . ($started > 0 ? (time() - $started) . 's' : 'bilinmiyor')
+                . ' retried=' . ($retried ? '1' : '0')
+            );
 
             return $this->failRedirect($lang, 'PLG_SYSTEM_NUMISTRAUTH_ERR_STATE');
         }
