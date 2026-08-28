@@ -4,6 +4,7 @@ defined('_JEXEC') or die;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Factory;
 use Joomla\CMS\Uri\Uri;
+use Joomla\CMS\Session\Session;
 use Joomla\CMS\User\User;
 
 // Helper sınıflarını yükle (temel)
@@ -204,6 +205,23 @@ class PlgWebservicesNumistr extends CMSPlugin
                 AssistantController::conversation($id);
                 return;
 
+            case 'assistant.recognize':
+                // multipart/form-data — JSON zorunlulugu burada gecerli degil.
+                // CSRF: uc kimlik gerektirir ve tarama kotasi tuketir; cross-site
+                // form POST'unu engellemek icin Joomla oturum jetonu istenir.
+                if ($method !== 'POST') {
+                    $this->responseHelper->sendError(405, 'Method Not Allowed', 'Use POST');
+                    return;
+                }
+
+                if (!Session::checkToken('post') && !Session::checkToken('request')) {
+                    $this->responseHelper->sendError(403, 'Forbidden', 'Invalid CSRF token');
+                    return;
+                }
+
+                AssistantController::recognize();
+                return;
+
             case 'assistant.conversations':
                 AssistantController::conversations();
                 return;
@@ -257,7 +275,7 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         // ===================== AI ASSISTANT: /v1/assistant/* ================
         // Must stay BEFORE the generic /v1/variants handlers.
-        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/assistant/(chat|health|export|conversations)(?:/(\d+))?(?:/(archive))?(?:[/?#;]|$)~', $uri, $m)) {
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/assistant/(chat|health|export|recognize|conversations)(?:/(\d+))?(?:/(archive))?(?:[/?#;]|$)~', $uri, $m)) {
             $this->dbg('assistant-' . $m[1], $uri);
 
             if (!class_exists('AssistantController')) {
@@ -270,6 +288,8 @@ class PlgWebservicesNumistr extends CMSPlugin
 
             if ($m[1] === 'chat') {
                 AssistantController::chat();
+            } elseif ($m[1] === 'recognize') {
+                AssistantController::recognize();
             } elseif ($m[1] === 'health') {
                 AssistantController::health();
             } elseif ($m[1] === 'export') {

@@ -478,6 +478,229 @@ class AssistantController
         }
     }
 
+    /**
+     * POST /v1/assistant/recognize   (kopru: task=assistant.recognize)
+     * ADR-003 Faz 2b parca 8 — "once yukle, sonra arac".
+     *
+     * LLM araclari ikili veri alamaz. Bu yuzden gorsel once buraya yuklenir;
+     * sonuc konusmaya arac mesaji olarak yazilir ve kullanici "birincisini anlat"
+     * dediginde LLM normal akista get_variant ile devam eder (eslesme id'leri
+     * konusma baglaminda durur, ikinci yukleme gerekmez).
+     *
+     * Tanima kotasi asistan mesaj kotasindan AYRIDIR: uygulamadaki aylik tarama
+     * havuzu (QuotaHelper) kullanilir — tek havuz karari (2026-08-28).
+     * Anonim tanima yoktur; uyelik sarttir (ayni karar).
+     */
+    public static function recognize(): void
+    {
+        self::boot();
+        $response = new NumisTRResponseHelper();
+        $method   = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+
+        if ($method === 'OPTIONS') {
+            $response->sendJson(['ok' => true]);
+            return;
+        }
+
+        if ($method !== 'POST') {
+            $response->sendError(405, 'Method Not Allowed', 'Use POST with multipart/form-data (image)');
+            return;
+        }
+
+        if (empty(self::$config['enabled'])) {
+            $response->sendError(503, 'Service Unavailable', self::msg('tr', 'disabled'));
+            return;
+        }
+
+        $lang     = self::detectLang($_POST['lang'] ?? null);
+        $identity = self::resolveIdentity();
+
+        if ($identity['user_id'] === null) {
+            $response->sendJson([
+                'ok'       => false,
+                'reason'   => 'auth_required',
+                'identity' => 'anon',
+                'answer'   => self::msg($lang, 'recognize_login'),
+                'cta'      => self::authCta($lang),
+            ], true);
+            return;
+        }
+
+        if (!class_exists('RecognitionController')) {
+            $response->sendError(503, 'Service Unavailable', 'Recognition not deployed');
+            return;
+        }
+
+        $user = Factory::getUser((int) $identity['user_id']);
+
+        if (!$user || (int) $user->id <= 0) {
+            $response->sendError(401, 'Unauthorized', 'User not found');
+            return;
+        }
+
+        try {
+            $result = RecognitionController::runForUser(
+                $user,
+                $_FILES['image'] ?? null,
+                $_FILES['reverse'] ?? null,
+                [],
+                self::$constants
+            );
+        } catch (\Throwable $e) {
+            self::log('assistant-recognize', $e->getMessage());
+            $response->sendError(500, 'Internal server error', self::msg($lang, 'llm_error'));
+            return;
+        }
+
+        if (empty($result['ok'])) {
+            $code = (string) ($result['error']['code'] ?? 'ERROR');
+
+            $response->sendJson([
+                'ok'         => false,
+                'reason'     => $code === 'QUOTA_EXCEEDED' ? 'scan_quota' : 'error',
+                'identity'   => $identity['type'],
+                'answer'     => $code === 'QUOTA_EXCEEDED'
+                    ? self::msg($lang, 'recognize_quota')
+                    : (string) ($result['error']['message'] ?? ''),
+                'scan_quota' => $result['quota'] ?? null,
+            ], true);
+            return;
+        }
+
+        $matches = self::enrichMatches((array) $result['data'], $identity['type'], $lang);
+        $summary = self::recognitionSummary($matches, $lang);
+
+        // Sonucu konusmaya yaz: kullanici sonraki turda "birincisini anlat" diyebilsin.
+        $convId = isset($_POST['conversation_id']) ? (int) $_POST['conversation_id'] : 0;
+
+        try {
+            $db           = Factory::getDbo();
+            $conversation = self::loadOrCreateConversation($db, $convId, $identity, $lang, $summary['title']);
+            $convId       = (int) $conversation['id'];
+
+            self::insertMessage($db, $convId, 'user', $summary['user_note'], 'recognize', null, 0, 0, 0.0, false);
+            self::insertMessage($db, $convId, 'assistant', $summary['text'], 'recognize', null, 0, 0, 0.0, false);
+
+            $db->setQuery('UPDATE ' . $db->quoteName('#__numistr_assistant_conversation') . ' SET last_at = NOW() WHERE id = ' . $convId)->execute();
+        } catch (\Throwable $e) {
+            self::log('assistant-recognize-persist', $e->getMessage());
+            $convId = 0;
+        }
+
+        $response->sendJson([
+            'ok'              => true,
+            'identity'        => $identity['type'],
+            'conversation_id' => $convId ?: null,
+            'answer'          => $summary['text'],
+            'matches'         => $matches,
+            'scan_quota'      => $result['quota'],
+            'request_id'      => $result['request_id'],
+        ], true);
+    }
+
+    /**
+     * AI servisinin dondurdugu eslesmeleri site verisiyle zenginlestirir.
+     * Baslik/URL/bolge/metal alanlari get_variant ile ayni yerden gelir, boylece
+     * kart ile sohbetin geri kalani ayni bicimi kullanir (URL uretimi tek yerde).
+     *
+     * Kademe: uye ilk 3, Pro ilk 10 eslesme (ADR-003).
+     */
+    private static function enrichMatches(array $data, string $identityType, string $lang): array
+    {
+        $limit = $identityType === 'pro' ? 10 : 3;
+        $raw   = array_slice((array) ($data['matches'] ?? []), 0, $limit);
+
+        if (!$raw) {
+            return [];
+        }
+
+        $tools = null;
+
+        try {
+            $tools = new NumisTRAssistantTools(self::$constants, self::$config, self::$secrets, Factory::getDbo());
+        } catch (\Throwable $e) {
+            self::log('assistant-recognize-tools', $e->getMessage());
+        }
+
+        $out = [];
+
+        foreach ($raw as $m) {
+            $id   = isset($m['article_id']) ? (int) $m['article_id'] : 0;
+            $conf = isset($m['confidence']) ? round((float) $m['confidence'], 3) : null;
+            $row  = null;
+
+            if ($tools !== null && $id > 0) {
+                try {
+                    $row = $tools->getVariant($id, $lang);
+                } catch (\Throwable $e) {
+                    $row = null;
+                }
+            }
+
+            if (is_array($row) && empty($row['error'])) {
+                $row['confidence'] = $conf;
+                $out[] = $row;
+                continue;
+            }
+
+            // Site kaydi bulunamadi (indeks makaleden once guncellenmis olabilir):
+            // AI servisinin verdigi ham bilgiyle yetin, URL uydurma.
+            $out[] = [
+                'article_id' => $id ?: null,
+                'title'      => (string) ($m['title'] ?? ''),
+                'region'     => $m['region'] ?? null,
+                'confidence' => $conf,
+                'url'        => '',
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Tanima sonucunu konusma metnine cevirir. Toplam sayi verilmez
+     * ("sonsuzluk algisi" ilkesi) — yalnizca eslesmeler ve guven skoru.
+     *
+     * @return array{title:string,user_note:string,text:string}
+     */
+    private static function recognitionSummary(array $matches, string $lang): array
+    {
+        $isEn      = $lang === 'en';
+        $userNote  = $isEn ? '[photo uploaded]' : '[fotograf yuklendi]';
+        $fallTitle = $isEn ? 'Coin recognition' : 'Sikke tanima';
+
+        if (!$matches) {
+            return [
+                'title'     => $fallTitle,
+                'user_note' => $userNote,
+                'text'      => $isEn
+                    ? 'I could not match this photo to a coin in the database. A sharp photo on a plain background, with the coin filling the frame, usually helps — and adding the other side improves accuracy.'
+                    : 'Bu fotografi veritabanindaki bir sikkeyle eslestiremedim. Duz zeminde, kadraji dolduran net bir fotograf genellikle yardimci olur; diger yuzu de eklemek dogrulugu artirir.',
+            ];
+        }
+
+        $lines = [];
+
+        foreach ($matches as $i => $m) {
+            $conf    = isset($m['confidence']) && $m['confidence'] !== null ? ' (%' . round(((float) $m['confidence']) * 100) . ')' : '';
+            $title   = !empty($m['title']) ? $m['title'] : ('#' . (int) ($m['article_id'] ?? 0));
+            $lines[] = ($i + 1) . '. ' . $title . $conf;
+        }
+
+        $head = $isEn ? 'Closest matches for your photo:' : 'Fotografiniza en yakin eslesmeler:';
+        $tail = $isEn
+            ? 'Ask about any of them (for example "tell me about the first one") and I will give the details.'
+            : 'Istediginizi sorabilirsiniz (ornegin "birincisini anlat"), ayrintilari vereyim.';
+
+        $title = !empty($matches[0]['title']) ? (string) $matches[0]['title'] : $fallTitle;
+
+        return [
+            'title'     => mb_substr($title, 0, 120),
+            'user_note' => $userNote,
+            'text'      => $head . "\n" . implode("\n", $lines) . "\n\n" . $tail,
+        ];
+    }
+
     private static function ownsConversation(array $conv, array $identity): bool
     {
         if ($identity['user_id'] !== null && (int) $conv['user_id'] === (int) $identity['user_id']) {

@@ -243,6 +243,8 @@ return [
             'llm_error'    => 'Su anda yanit uretemedim. Lutfen biraz sonra tekrar deneyin.',
             'disabled'     => 'Asistan su anda bakimda.',
             'cta_register' => 'Elinizdeki bir sikkeyi fotografla tanimlamak icin ucretsiz uye olup AnatolianCoins uygulamasini kullanabilirsiniz.',
+            'recognize_login' => 'Fotograftan sikke tanima uyelere ozeldir. Ucretsiz uye olun ya da giris yapin; aylik 10 tanima hakkiniz olur.',
+            'recognize_quota' => 'Bu ayki tanima hakkiniz doldu. Pro uyelikte tanima sinirsizdir; ayrintilar /tr/abonelikler sayfasinda.',
         ],
         'en' => [
             'other'        => 'I am the NumisTR assistant; I can only help with ancient Anatolian coins, ancient settlements, numismatic terms and site/membership questions. Could you rephrase your question within that scope?',
@@ -257,6 +259,8 @@ return [
             'llm_error'    => 'I could not produce an answer right now. Please try again shortly.',
             'disabled'     => 'The assistant is under maintenance.',
             'cta_register' => 'To identify a coin from a photo, register for free and use the AnatolianCoins app.',
+            'recognize_login' => 'Photo recognition is for members. Register for free or sign in — you get 10 recognitions per month.',
+            'recognize_quota' => 'You have used all your recognitions for this month. Pro membership has unlimited recognition; details at /en/plans.',
         ],
     ],
 

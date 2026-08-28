@@ -162,6 +162,12 @@ check('auth_urls point at numistrauth (Auth0 web girisi)',
 check('auth_urls are relative (return parametresi ile ayni kokene doner)',
     strpos((string) $cfg['auth_urls']['login'], '/index.php') === 0);
 check('limits define user and pro tiers', isset($cfg['limits']['anon'], $cfg['limits']['user'], $cfg['limits']['pro']));
+check('recognize messages exist (TR+EN)',
+    isset($cfg['messages']['tr']['recognize_login'], $cfg['messages']['tr']['recognize_quota'],
+          $cfg['messages']['en']['recognize_login'], $cfg['messages']['en']['recognize_quota']));
+check('recognize quota message points at Pro page',
+    strpos((string) $cfg['messages']['tr']['recognize_quota'], '/tr/abonelikler') !== false
+    && strpos((string) $cfg['messages']['en']['recognize_quota'], '/en/plans') !== false);
 check('user tier is more generous than anon',
     $cfg['limits']['user']['daily_messages'] > $cfg['limits']['anon']['daily_messages']
     && $cfg['limits']['pro']['daily_messages'] > $cfg['limits']['user']['daily_messages']);
