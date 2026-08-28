@@ -50,7 +50,9 @@ Her sikke "varyant" kaydı şu alanları içerir: başlık (kaynak/katalog refer
 ## 6. Üyelik, Pro ve kotalar
 - Siteyi gezmek, sikke listelerini ve yerleşim makalelerini okumak **ücretsizdir**, üyelik gerekmez.
 - **Ücretsiz üyelik** (site veya uygulamadan kayıt): AnatolianCoins uygulamasında ayda **10 sikke tarama** (fotoğraftan tanıma), en iyi 3 eşleşme, temel bilgi, 5 favori, 1 koleksiyon.
-- **Pro üyelik**: sınırsız tarama, en iyi 10 eşleşme, ayrıntılı bilgi, sınırsız koleksiyon, çevrimdışı veritabanı, yüksek çözünürlüklü görseller.
+- **Pro üyelik**: sınırsız tarama, en iyi 10 eşleşme, ayrıntılı bilgi, sınırsız koleksiyon, **çevrimdışı erişim**, yüksek çözünürlüklü görseller.
+- Çevrimdışı erişimin kapsamı: kullanıcının **kendi koleksiyonu** ve **tarama geçmişinde çıkan sikkeler**. Bu kayıtların bilgileri ve görselleri cihazda saklanır, internet olmadan açılır.
+- ⚠️ Tüm katalogu (10.000+ sikke, 11.000+ görsel) toplu indirme diye bir özellik YOKTUR ve planlanmamaktadır.
 - Pro fiyatı: **aylık 99,99 TL** veya **yıllık 839,99 TL** (yıllıkta yaklaşık %30 tasarruf). Türkiye dışı kartlarda **aylık 3,99 €** / **yıllık 34,99 €**.
 - Pro **iki kanaldan** alınabilir: (1) **web sitesinden** — /tr/abonelikler sayfasındaki "PRO'ya Geç" butonu, ödeme iyzico altyapısıyla alınır, kart bilgisi NumisTR'de saklanmaz; (2) **AnatolianCoins uygulamasından** Google Play aboneliğiyle. Fiyatlar iki kanalda aynıdır.
 - Hesap tektir: web ve uygulama aynı üyelikle (Auth0) çalışır; hangi kanaldan alınırsa alınsın Pro her ikisinde de geçerli olur.

@@ -50,7 +50,9 @@ There are TR and EN articles for 1,600+ ancient cities/sites. Each article cover
 ## 6. Membership, Pro and quotas
 - Browsing the site, coin lists and settlement articles is **free**, no account needed.
 - **Free account** (register on the site or in the app): **10 coin scans per month** in the AnatolianCoins app (photo recognition), top 3 matches, basic info, 5 favourites, 1 collection.
-- **Pro membership**: unlimited scans, top 10 matches, detailed info, unlimited collections, offline database, high-resolution images.
+- **Pro membership**: unlimited scans, top 10 matches, detailed info, unlimited collections, **offline access**, high-resolution images.
+- Scope of offline access: the user's **own collection** and the **coins matched in their scan history**. Data and images for those records are kept on the device and open without a connection.
+- ⚠️ There is no bulk download of the whole catalogue (10,000+ coins, 11,000+ images), and none is planned.
 - Pro price: **€3.99 / month** or **€34.99 / year** (Turkiye: 99.99 TL / 839.99 TL; the yearly plan saves about 30%).
 - Pro can be bought through **two channels**: (1) **on the website** — the "Go PRO" button on /en/plans, payment handled by iyzico, card details are never stored by NumisTR; (2) **in the AnatolianCoins app** via a Google Play subscription. Prices are the same in both.
 - One account for both: the website and the app share the same membership (Auth0), so Pro bought in either channel applies to both.

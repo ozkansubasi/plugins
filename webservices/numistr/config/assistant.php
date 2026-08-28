@@ -143,8 +143,8 @@ return [
     // first match wins; keys are lower-case substrings; answers per language
     'keyword_map' => [
         'pro uyelik' => [
-            'tr' => 'Pro uyelik iki yoldan alinabilir: web sitesinden /tr/abonelikler sayfasindaki PRO butonuyla (odeme iyzico ile) veya AnatolianCoins uygulamasindan Google Play aboneligiyle. Fiyat ayni: aylik 99,99 TL, yillik 839,99 TL. Pro: sinirsiz sikke tanima, tum eslesmeler, detayli bilgi ve cevrimdisi veritabani.',
-            'en' => 'Pro can be bought in two ways: on the website at /en/plans ("Go PRO", payment via iyzico) or in the AnatolianCoins app via Google Play. Same price either way: €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Pro gives unlimited coin recognition, all matches, detailed info and the offline database.',
+            'tr' => 'Pro uyelik iki yoldan alinabilir: web sitesinden /tr/abonelikler sayfasindaki PRO butonuyla (odeme iyzico ile) veya AnatolianCoins uygulamasindan Google Play aboneligiyle. Fiyat ayni: aylik 99,99 TL, yillik 839,99 TL. Pro: sinirsiz sikke tanima, tum eslesmeler, detayli bilgi ve cevrimdisi erisim (kendi koleksiyonunuz ve tarama gecmisiniz).',
+            'en' => 'Pro can be bought in two ways: on the website at /en/plans ("Go PRO", payment via iyzico) or in the AnatolianCoins app via Google Play. Same price either way: €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Pro gives unlimited coin recognition, all matches, detailed info and offline access to your own collection and scan history.',
         ],
         'pro membership' => [
             'tr' => 'Pro uyelik web sitesinden (/tr/abonelikler, iyzico ile odeme) veya uygulamadan (Google Play) alinir: aylik 99,99 TL, yillik 839,99 TL.',
