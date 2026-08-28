@@ -340,7 +340,16 @@ class PlgSystemNumistrbilling extends CMSPlugin
         // düşebilir. iyzico teslimatı sağlıklı saysın diye 400 DEĞİL, 200 dönüyoruz;
         // olayı yalnızca kaydedip geçiyoruz (Pro durumu abonelik olaylarından yönetilir).
         if ($subRef === '' || strpos($eventType, 'subscription.') !== 0) {
-            $this->log('wh-non-subscription', 'event=' . ($eventType !== '' ? $eventType : '(bos)'));
+            // 1.2.1 — teşhis: abonelik dışı bildirimler de aynı gizli anahtarla
+            // imzalanıyorsa, yenileme webhook'u gelmeden ÖNCE hangi HMAC varyantının
+            // tuttuğunu öğreniriz (eşleşirse 'wh-sig-ok variant=…' satırı düşer).
+            $this->log(
+                'wh-non-subscription',
+                'event=' . ($eventType !== '' ? $eventType : '(bos)')
+                . ' sig=' . $this->verifyWebhookSignature($eventType, $subRef, $orderRef, $custRef)
+                . ' sigLen=' . strlen($this->signatureHeader())
+                . ' keys=' . implode('|', array_slice(array_keys($payload), 0, 15))
+            );
 
             return $this->ok(['ok' => true, 'action' => 'ignored_non_subscription']);
         }
@@ -410,21 +419,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $secret     = (string) $this->params->get('secret_key', '');
         $merchantId = trim((string) $this->params->get('merchant_id', ''));
 
-        $header = '';
-
-        foreach (['HTTP_X_IYZ_SIGNATURE_V3'] as $k) {
-            if (!empty($_SERVER[$k])) {
-                $header = (string) $_SERVER[$k];
-            }
-        }
-
-        if ($header === '' && function_exists('getallheaders')) {
-            foreach ((array) getallheaders() as $name => $value) {
-                if (strcasecmp((string) $name, 'X-IYZ-SIGNATURE-V3') === 0) {
-                    $header = (string) $value;
-                }
-            }
-        }
+        $header = $this->signatureHeader();
 
         if ($header === '') {
             return 'missing';
@@ -451,6 +446,26 @@ class PlgSystemNumistrbilling extends CMSPlugin
         }
 
         return 'invalid';
+    }
+
+    /**
+     * X-IYZ-SIGNATURE-V3 başlığı; yoksa boş dize.
+     */
+    private function signatureHeader(): string
+    {
+        if (!empty($_SERVER['HTTP_X_IYZ_SIGNATURE_V3'])) {
+            return (string) $_SERVER['HTTP_X_IYZ_SIGNATURE_V3'];
+        }
+
+        if (function_exists('getallheaders')) {
+            foreach ((array) getallheaders() as $name => $value) {
+                if (strcasecmp((string) $name, 'X-IYZ-SIGNATURE-V3') === 0) {
+                    return (string) $value;
+                }
+            }
+        }
+
+        return '';
     }
 
     // ==================================================================
@@ -585,7 +600,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $expireActive = (int) $this->params->get('expire_active_after_period', 0) === 1;
 
         $db       = Factory::getDbo();
-        $statuses = [$db->quote('CANCELED'), $db->quote('UNPAID'), $db->quote('EXPIRED')];
+        $statuses = [$db->quote('CANCELED'), $db->quote('UNPAID')];
 
         if ($expireActive) {
             $statuses[] = $db->quote('ACTIVE');
@@ -595,9 +610,24 @@ class PlgSystemNumistrbilling extends CMSPlugin
             . ' AND ' . $db->quoteName('current_period_end') . ' IS NOT NULL'
             . ' AND ' . $db->quoteName('current_period_end') . ' < ' . $db->quote($cutoff);
 
+        // 1.2.1 — EXPIRED satırlar her koşuda yeniden sayılmasın (checked sürekli
+        // şişiyordu). Kapatılmış kayıt yalnızca kullanıcı HÂLÂ Pro grubundaysa
+        // (önceki koşuda revoke başarısız olmuş olabilir) tekrar ele alınır.
+        $statusWhere = $db->quoteName('status') . ' IN (' . implode(', ', $statuses) . ')';
+        $proGroupId  = $this->proGroupId();
+
+        if ($proGroupId > 0) {
+            $statusWhere = '(' . $statusWhere
+                . ' OR (' . $db->quoteName('status') . ' = ' . $db->quote('EXPIRED')
+                . ' AND EXISTS (SELECT 1 FROM ' . $db->quoteName('#__user_usergroup_map') . ' AS m'
+                . ' WHERE m.' . $db->quoteName('user_id') . ' = '
+                . $db->quoteName('numistr_subscriptions') . '.' . $db->quoteName('user_id')
+                . ' AND m.' . $db->quoteName('group_id') . ' = ' . $proGroupId . ')))';
+        }
+
         $db->setQuery(
             'SELECT * FROM ' . $db->quoteName('numistr_subscriptions') . $baseWhere
-            . ' AND ' . $db->quoteName('status') . ' IN (' . implode(', ', $statuses) . ')'
+            . ' AND ' . $statusWhere
         );
 
         $rows    = (array) $db->loadObjectList();
