@@ -510,7 +510,8 @@ class PlgWebservicesNumistr extends CMSPlugin
             ]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Unable to fetch locations');
+            $this->dbg('locations-error', $e->getMessage());
+            $this->responseHelper->sendError(500, 'Internal server error', !empty($this->config['DEBUG_MODE']) ? $e->getMessage() : 'Unable to fetch locations');
         }
     }
 
@@ -545,7 +546,8 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson(['data' => $detail]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Unable to fetch location');
+            $this->dbg('location-detail-error', $e->getMessage());
+            $this->responseHelper->sendError(500, 'Internal server error', !empty($this->config['DEBUG_MODE']) ? $e->getMessage() : 'Unable to fetch location');
         }
     }
 
@@ -606,7 +608,8 @@ class PlgWebservicesNumistr extends CMSPlugin
             ]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Import failed');
+            $this->dbg('locations-import-error', $e->getMessage());
+            $this->responseHelper->sendError(500, 'Internal server error', !empty($this->config['DEBUG_MODE']) ? $e->getMessage() : 'Import failed');
         }
     }
 
@@ -777,10 +780,11 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($response);
 
         } catch (\Throwable $e) {
+            $this->dbg('ticker-error', $e->getMessage());
             $this->responseHelper->sendError(
                 500,
                 'Ticker error',
-                $this->config['DEBUG_MODE'] ? $e->getMessage() : 'Unable to fetch ticker data'
+                !empty($this->config['DEBUG_MODE']) ? $e->getMessage() : 'Unable to fetch ticker data'
             );
         }
     }

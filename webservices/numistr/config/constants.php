@@ -88,6 +88,12 @@ return [
         ],
     ],
 
+    // Hata yanıtlarında ayrıntılı istisna mesajı gösterilsin mi?
+    // ⚠️ Canlıda DAİMA false: true olursa SQL/dosya yolu gibi iç detaylar API'ye sızar.
+    // (2026-08-28: anahtar hiç tanımlı değildi → 4 catch bloğunda "Undefined array key"
+    //  uyarısı basılıyor, header'lar gönderildiği için HTTP durum kodu da ayarlanamıyordu.)
+    'DEBUG_MODE' => false,
+
     // "Sikkeler" kök kategori id
     'ROOT_CAT_ID' => 16,
     
