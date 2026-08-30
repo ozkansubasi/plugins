@@ -15,6 +15,17 @@
     
     <!-- Helpers Directory -->
     <folder>helpers</folder>
+
+    <!-- Controllers Directory
+         2026-08-30: controllers/ ve assistant/ manifest'te YOKTU. Bu yuzden zip ile
+         kurulum bu iki klasoru hic kopyalamiyor, kurulum yine de "basarili" diyor ve
+         surum numarasi ilerliyordu — sessiz kismi deploy. Recognition/Assistant
+         controller'lari ve cekirdek KB dosyalari 1.5.0'dan beri yalnizca elle
+         (File Manager) yuklenmisti. -->
+    <folder>controllers</folder>
+
+    <!-- Assistant core knowledge base (md) -->
+    <folder>assistant</folder>
   </files>
   
   <config>
