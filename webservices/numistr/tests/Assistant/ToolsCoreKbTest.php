@@ -203,6 +203,14 @@ $constants = require $root . '/config/constants.php';
 $cfgRl = $constants['QUOTA']['rate_limits'];
 check('constants: adil kullanim esikleri 1 / 10 / 30',
     (int) $cfgRl['per_2min'] === 1 && (int) $cfgRl['per_hour'] === 10 && (int) $cfgRl['per_day'] === 30);
+// assistant.php (keyword_map + hazir mesajlar) da bayatlamasin. 2026-08-30'da tam bu
+// dosya atlanmisti: cekirdek KB guncellenirken burada "gunde 100" kalmisti — dosya
+// Turkce karakterleri ASCII yaziyor ('gunde'), bu yuzden 'günde' aramasina takilmadi.
+$cfgDump = var_export($cfg, true);
+check('assistant.php: esikler gunluk tavanla tutarli (30)',
+    strpos($cfgDump, 'gunde 30') !== false && strpos($cfgDump, '30 recognitions per day') !== false);
+check('assistant.php: eski esik metni kalmadi',
+    strpos($cfgDump, 'gunde 100') === false && strpos($cfgDump, '100 recognitions per day') === false);
 
 check('recognize quota message points at Pro page',
     strpos((string) $cfg['messages']['tr']['recognize_quota'], '/tr/abonelikler') !== false

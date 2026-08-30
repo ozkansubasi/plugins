@@ -189,14 +189,16 @@ class QuotaHelper
     }
 
     /**
-     * Adil kullanim / kotuye kullanim korumasi — "sinirsiz" Pro'nun ucunu kapatir.
+     * Adil kullanim / kotuye kullanim korumasi — yuksek kapasiteli Pro'nun ucunu kapatir.
      *
-     * Neden ayri bir katman: aylik kota (canScan) Pro'da fiilen sinirsizdir, yani
+     * Neden ayri bir katman: aylik kota (canScan) Pro'da fiilen acik uclu, yani
      * tek bir hesapla sabahtan aksama kadar tarama yapmak ya da hesabi paylasip
-     * hacmi katlamak mumkundu. Sektor standardi "sinirsiz" planlarda da pencere
-     * bazli tavan koymaktir: dakika/saat burst'u otomatik betikleri, gunluk tavan
-     * ise paylasimin ekonomisini durdurur. Gercek bir koleksiyoncu gunde 100
-     * sikke fotograflamaz; 5 kisiye dagitilmis bir hesap bunu gorur.
+     * hacmi katlamak mumkundu. Cozum pencere bazli tavan: kisa pencere (120 sn)
+     * otomatik betikleri, gunluk tavan ise paylasimin ekonomisini durdurur.
+     * Esikler gercek temposundan turetildi — bir tarama (fotograf cekimi/secimi,
+     * yukleme, sonucun degerlendirilmesi) ~2-3 dakika surer; gunde 30 tanima
+     * kesintisiz bir ila bir bucuk saatlik calismaya karsilik gelir ve 5 kisiye
+     * dagitilmis bir hesap bu tavani hemen gorur.
      *
      * IP ile engelleme BILINCLI olarak yapilmiyor: CGNAT, dinamik ev IP'si, VPN ve
      * seyahat yuzunden mesru kullaniciyi cezalandirir, paylasimi ise ayni evde

@@ -143,7 +143,7 @@ return [
     // first match wins; keys are lower-case substrings; answers per language
     'keyword_map' => [
         'pro uyelik' => [
-            'tr' => 'Pro uyelik iki yoldan alinabilir: web sitesinden /tr/abonelikler sayfasindaki PRO butonuyla (odeme iyzico ile) veya AnatolianCoins uygulamasindan Google Play aboneligiyle. Fiyat ayni: aylik 99,99 TL, yillik 839,99 TL. Pro: yuksek kapasiteli sikke tanima (adil kullanim: gunde 100), tum eslesmeler, detayli bilgi ve cevrimdisi erisim (kendi koleksiyonunuz ve tarama gecmisiniz).',
+            'tr' => 'Pro uyelik iki yoldan alinabilir: web sitesinden /tr/abonelikler sayfasindaki PRO butonuyla (odeme iyzico ile) veya AnatolianCoins uygulamasindan Google Play aboneligiyle. Fiyat ayni: aylik 99,99 TL, yillik 839,99 TL. Pro: yuksek kapasiteli sikke tanima (adil kullanim: gunde 30), tum eslesmeler, detayli bilgi ve cevrimdisi erisim (kendi koleksiyonunuz ve tarama gecmisiniz).',
             'en' => 'Pro can be bought in two ways: on the website at /en/plans ("Go PRO", payment via iyzico) or in the AnatolianCoins app via Google Play. Same price either way: €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL). Pro gives high-capacity coin recognition (fair use: 100/day), all matches, detailed info and offline access to your own collection and scan history.',
         ],
         'pro membership' => [
@@ -151,12 +151,12 @@ return [
             'en' => 'Pro is available on the website (/en/plans, paid via iyzico) or in the app (Google Play): €3.99/month or €34.99/year (Turkiye: 99.99 TL / 839.99 TL).',
         ],
         'kac tarama' => [
-            'tr' => 'Ucretsiz uyelikte ayda 10 sikke tarama hakki vardir; Pro uyelikte gunde 100 tanimaya kadar yuksek kapasiteli kullanim sunulur. Tarama icin mobil uygulamaya giris yapmaniz gerekir.',
-            'en' => 'Free accounts get 10 coin scans per month; Pro offers high-capacity use, up to 100 recognitions per day. You need to sign in to the mobile app to scan.',
+            'tr' => 'Ucretsiz uyelikte ayda 10 sikke tarama hakki vardir; Pro uyelikte gunde 30 tanimaya kadar yuksek kapasiteli kullanim sunulur. Tarama icin mobil uygulamaya giris yapmaniz gerekir.',
+            'en' => 'Free accounts get 10 coin scans per month; Pro offers high-capacity use, up to 30 recognitions per day. You need to sign in to the mobile app to scan.',
         ],
         'how many scans' => [
-            'tr' => 'Ucretsiz uyelikte ayda 10 sikke tarama hakki vardir; Pro uyelikte gunde 100 tanimaya kadar yuksek kapasiteli kullanim sunulur.',
-            'en' => 'Free accounts get 10 coin scans per month; Pro offers high-capacity use, up to 100 recognitions per day.',
+            'tr' => 'Ucretsiz uyelikte ayda 10 sikke tarama hakki vardir; Pro uyelikte gunde 30 tanimaya kadar yuksek kapasiteli kullanim sunulur.',
+            'en' => 'Free accounts get 10 coin scans per month; Pro offers high-capacity use, up to 30 recognitions per day.',
         ],
         'iletisim' => [
             'tr' => 'Bize info@numistr.org adresinden veya /tr/iletisim-bilgileri sayfasindan ulasabilirsiniz.',
@@ -244,7 +244,7 @@ return [
             'disabled'     => 'Asistan su anda bakimda.',
             'cta_register' => 'Elinizdeki bir sikkeyi fotografla tanimlamak icin ucretsiz uye olup AnatolianCoins uygulamasini kullanabilirsiniz.',
             'recognize_login' => 'Fotograftan sikke tanima uyelere ozeldir. Ucretsiz uye olun ya da giris yapin; aylik 10 tanima hakkiniz olur.',
-            'recognize_quota' => 'Bu ayki tanima hakkiniz doldu. Pro uyelikte gunde 100 tanimaya kadar yuksek kapasiteli kullanim var; ayrintilar /tr/abonelikler sayfasinda.',
+            'recognize_quota' => 'Bu ayki tanima hakkiniz doldu. Pro uyelikte gunde 30 tanimaya kadar yuksek kapasiteli kullanim var; ayrintilar /tr/abonelikler sayfasinda.',
             'recognize_rate' => 'Cok hizli tanima yapiyorsunuz. Adil kullanim siniri geregi kisa bir sure bekleyip tekrar deneyin.',
         ],
         'en' => [
@@ -261,7 +261,7 @@ return [
             'disabled'     => 'The assistant is under maintenance.',
             'cta_register' => 'To identify a coin from a photo, register for free and use the AnatolianCoins app.',
             'recognize_login' => 'Photo recognition is for members. Register for free or sign in — you get 10 recognitions per month.',
-            'recognize_quota' => 'You have used all your recognitions for this month. Pro offers high-capacity use, up to 100 recognitions per day; details at /en/plans.',
+            'recognize_quota' => 'You have used all your recognitions for this month. Pro offers high-capacity use, up to 30 recognitions per day; details at /en/plans.',
             'recognize_rate' => 'You are running recognitions very quickly. Fair-use limits apply — please wait a moment and try again.',
         ],
     ],
