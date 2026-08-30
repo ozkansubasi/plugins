@@ -13,7 +13,9 @@ use Joomla\CMS\Filesystem\Folder;
 class UniversityApplicationHelper
 {
     private const UPLOAD_DIR = JPATH_ROOT . '/media/university_applications';
-    private const RECIPIENT_EMAIL = 'abonelik@numistr.org';
+    // 2026-08-30: 'abonelik@numistr.org' diye bir posta kutusu YOKTU; bu uca gelen
+    // her basvurunun bildirimi bosluga gidiyordu. Gecerli kutu: destek@numistr.org.
+    private const RECIPIENT_EMAIL = 'destek@numistr.org';
     private const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
     private const ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'pdf'];
 
@@ -67,14 +69,23 @@ class UniversityApplicationHelper
         $data['id_card_path'] = $uploadResult['path'];
         $data['id_card_filename'] = $uploadResult['filename'];
 
-        // Send email notification
-        $emailResult = self::sendNotificationEmail($data);
-        if (!$emailResult['success']) {
-            return $emailResult;
-        }
-
-        // Store application in database
+        // ONCE kayit, SONRA bildirim (2026-08-30'da duzeltildi).
+        //
+        // Eski sira e-postayi once gonderiyor ve Send() basarisiz olursa erken donuyordu:
+        // basvuru DB'ye HIC yazilmiyor, ogrencinin yukledigi kimlik belgesi diskte
+        // sahipsiz kaliyordu. Bildirim gonderimi, basvurunun kaydini dusurmemeli.
         $dbResult = self::storeApplication($data);
+
+        $emailResult = self::sendNotificationEmail($data);
+
+        if (empty($emailResult['success'])) {
+            // Kayit durdugu icin veri kaybi yok; ama bildirimin gitmedigi GORUNUR olmali.
+            self::logIssue(
+                'bildirim e-postasi gonderilemedi (basvuru kaydedildi, id='
+                . (string) ($dbResult['id'] ?? '?') . '): '
+                . (string) ($emailResult['message'] ?? '')
+            );
+        }
 
         return [
             'success' => true,
@@ -134,6 +145,24 @@ class UniversityApplicationHelper
             'path' => $destPath,
             'filename' => $filename
         ];
+    }
+
+    /**
+     * Sessiz kalmamak icin: bildirim gonderilemediginde uyari logu.
+     * (RateLimiter'daki 'koruma calismadiginda logla' deseniyle ayni.)
+     */
+    private static function logIssue(string $message): void
+    {
+        try {
+            \Joomla\CMS\Log\Log::addLogger(
+                array('text_file' => 'numistr_university.php'),
+                \Joomla\CMS\Log\Log::ALL,
+                array('numistr-university')
+            );
+            \Joomla\CMS\Log\Log::add($message, \Joomla\CMS\Log\Log::WARNING, 'numistr-university');
+        } catch (\Throwable $e) {
+            // yoksay
+        }
     }
 
     /**
