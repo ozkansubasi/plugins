@@ -50,7 +50,7 @@ Her sikke "varyant" kaydı şu alanları içerir: başlık (kaynak/katalog refer
 ## 6. Üyelik, Pro ve kotalar
 - Siteyi gezmek, sikke listelerini ve yerleşim makalelerini okumak **ücretsizdir**, üyelik gerekmez.
 - **Ücretsiz üyelik** (site veya uygulamadan kayıt): AnatolianCoins uygulamasında ayda **10 sikke tarama** (fotoğraftan tanıma), en iyi 3 eşleşme, temel bilgi, 5 favori, 1 koleksiyon.
-- **Pro üyelik**: yüksek kapasiteli tarama (adil kullanım: dakikada 6, saatte 60, günde 100 tanıma), en iyi 10 eşleşme, ayrıntılı bilgi, sınırsız koleksiyon, **çevrimdışı erişim**, yüksek çözünürlüklü görseller.
+- **Pro üyelik**: yüksek kapasiteli tarama (adil kullanım: iki dakikada 1, saatte 10, günde 30 tanıma), en iyi 10 eşleşme, ayrıntılı bilgi, sınırsız koleksiyon, **çevrimdışı erişim**, yüksek çözünürlüklü görseller.
 - Çevrimdışı erişimin kapsamı: kullanıcının **kendi koleksiyonu** ve **tarama geçmişinde çıkan sikkeler**. Bu kayıtların bilgileri ve görselleri cihazda saklanır, internet olmadan açılır.
 - ⚠️ Tüm katalogu (10.000+ sikke, 11.000+ görsel) toplu indirme diye bir özellik YOKTUR ve planlanmamaktadır.
 - Pro fiyatı: **aylık 99,99 TL** veya **yıllık 839,99 TL** (yıllıkta yaklaşık %30 tasarruf). Türkiye dışı kartlarda **aylık 3,99 €** / **yıllık 34,99 €**.

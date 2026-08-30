@@ -225,9 +225,12 @@ return [
         //   hour   → yoğun kataloglama seansına yer bırakır
         //   day    → hesap paylaşımının ekonomisini durdurur
         'rate_limits' => [
-            'per_minute' => 6,
-            'per_hour'   => 60,
-            'per_day'    => 100,
+            // Bir taramanin gercek temposu ~2-3 dakikadir (fotograf cekimi/secimi,
+            // yukleme, sonucun degerlendirilmesi). Esikler bu tempoya gore secildi:
+            // olagan kullanimda karsilasilmaz, betikli kullanim ise hemen durur.
+            'per_2min' => 1,
+            'per_hour' => 10,
+            'per_day'  => 30,
         ],
     ],
 ];

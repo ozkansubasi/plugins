@@ -204,7 +204,7 @@ class QuotaHelper
      *
      * @param   User  $user  Giris yapmis kullanici
      *
-     * @return  array  ['allowed'=>bool,'scope'=>''|'minute'|'hour'|'day',
+     * @return  array  ['allowed'=>bool,'scope'=>''|'burst'|'hour'|'day',
      *                  'limit'=>int,'used'=>int,'retry_after'=>int,'counts'=>array,'measured'=>bool]
      */
     public function checkRateLimits(User $user)
@@ -235,17 +235,19 @@ class QuotaHelper
      * verildiginde hangi pencerenin asildigini soyler. En dar pencere once bakilir,
      * boylece kullaniciya en kisa bekleme suresi bildirilir.
      *
-     * @param   array  $counts  ['minute'=>int,'hour'=>int,'day'=>int]
+     * @param   array  $counts  ['burst'=>int,'hour'=>int,'day'=>int]
      * @param   array  $limits  ayni anahtarlar; 0 veya eksi = o pencere kapali
      *
      * @return  array  ['allowed'=>bool,'scope'=>string,'limit'=>int,'used'=>int,'retry_after'=>int]
      */
     public static function rateDecision(array $counts, array $limits)
     {
+        // 'burst' penceresi 120 saniyedir: bir taramanin gercek suresi ~2-3 dakika
+        // oldugundan dakika bazli bir tavan bu kullanimi anlamli bicimde tarif etmiyor.
         $windows = array(
-            'minute' => 60,
-            'hour'   => 3600,
-            'day'    => 86400,
+            'burst' => 120,
+            'hour'  => 3600,
+            'day'   => 86400,
         );
 
         foreach ($windows as $scope => $seconds) {
@@ -267,12 +269,9 @@ class QuotaHelper
     }
 
     /**
-     * @return  array  ['minute'=>int,'hour'=>int,'day'=>int]
-     */
-    /**
      * Yapilandirilmis adil kullanim tavanlari (istemciye bildirmek icin publik).
      *
-     * @return  array  ['minute'=>int,'hour'=>int,'day'=>int]
+     * @return  array  ['burst'=>int,'hour'=>int,'day'=>int]  burst penceresi 120 sn
      */
     public function rateLimits()
     {
@@ -284,9 +283,9 @@ class QuotaHelper
         $cfg = isset($this->config['QUOTA']['rate_limits']) ? (array) $this->config['QUOTA']['rate_limits'] : array();
 
         return array(
-            'minute' => isset($cfg['per_minute']) ? (int) $cfg['per_minute'] : 6,
-            'hour'   => isset($cfg['per_hour'])   ? (int) $cfg['per_hour']   : 60,
-            'day'    => isset($cfg['per_day'])    ? (int) $cfg['per_day']    : 100,
+            'burst' => isset($cfg['per_2min']) ? (int) $cfg['per_2min'] : 1,
+            'hour'  => isset($cfg['per_hour']) ? (int) $cfg['per_hour'] : 10,
+            'day'   => isset($cfg['per_day'])  ? (int) $cfg['per_day']  : 30,
         );
     }
 
@@ -299,7 +298,7 @@ class QuotaHelper
     private function recentScanCounts($userId)
     {
         if ($userId <= 0) {
-            return array('minute' => 0, 'hour' => 0, 'day' => 0);
+            return array('burst' => 0, 'hour' => 0, 'day' => 0);
         }
 
         try {
@@ -307,7 +306,7 @@ class QuotaHelper
 
             $db->setQuery(
                 'SELECT'
-                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 60 SECOND) THEN 1 ELSE 0 END) AS c_minute,'
+                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 120 SECOND) THEN 1 ELSE 0 END) AS c_burst,'
                 . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 HOUR) THEN 1 ELSE 0 END) AS c_hour,'
                 . ' COUNT(*) AS c_day'
                 . ' FROM ' . $db->quoteName('numistr_recognition_requests')
@@ -318,13 +317,13 @@ class QuotaHelper
             $row = $db->loadAssoc();
 
             if (!is_array($row)) {
-                return array('minute' => 0, 'hour' => 0, 'day' => 0);
+                return array('burst' => 0, 'hour' => 0, 'day' => 0);
             }
 
             return array(
-                'minute' => (int) $row['c_minute'],
-                'hour'   => (int) $row['c_hour'],
-                'day'    => (int) $row['c_day'],
+                'burst' => (int) $row['c_burst'],
+                'hour'  => (int) $row['c_hour'],
+                'day'   => (int) $row['c_day'],
             );
         } catch (\Throwable $e) {
             $this->logRateIssue($e->getMessage());

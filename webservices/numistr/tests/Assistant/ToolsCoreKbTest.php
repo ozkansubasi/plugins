@@ -100,6 +100,21 @@ check('EN KB has current Pro price', strpos($en['text'], '34.99') !== false && s
 check('EN KB has no stale 699.99 price', strpos($en['text'], '699.99') === false);
 check('TR KB mentions web purchase channel', stripos($tr['text'], 'iyzico') !== false && strpos($tr['text'], '/tr/abonelikler') !== false);
 check('EN KB mentions web purchase channel', stripos($en['text'], 'iyzico') !== false && strpos($en['text'], '/en/plans') !== false);
+// Adil kullanim esikleri de bayatlamasin: asistan ziyaretciye yanlis sinir soylemesin.
+// Esikler `config/constants.php` -> QUOTA.rate_limits ile AYNI olmali (asagida ayrica
+// dogrulaniyor); burada cekirdek KB metninin onlari dogru yazdigi kontrol ediliyor.
+check('TR KB has current fair-use thresholds (2 dk 1 / 10 / 30)',
+    strpos($tr['text'], 'iki dakikada 1') !== false
+    && strpos($tr['text'], 'saatte 10') !== false
+    && strpos($tr['text'], 'günde 30') !== false);
+check('TR KB has no stale fair-use thresholds',
+    strpos($tr['text'], 'dakikada 6') === false && strpos($tr['text'], 'günde 100') === false);
+check('EN KB has current fair-use thresholds',
+    strpos($en['text'], '1 every two minutes') !== false
+    && strpos($en['text'], '10 per hour') !== false
+    && strpos($en['text'], '30 per day') !== false);
+check('EN KB has no stale fair-use thresholds',
+    strpos($en['text'], '6 per minute') === false && strpos($en['text'], '100 per day') === false);
 check('TR KB does not claim web payment is missing', stripos($tr['text'], 'web ödemesi henüz yok') === false);
 check('EN KB does not claim web payment is missing', stripos($en['text'], 'no web payment') === false);
 check('TR KB explains web cancellation', strpos($tr['text'], '/tr/hesabim') !== false);
@@ -167,21 +182,27 @@ check('recognize messages exist (TR+EN)',
           $cfg['messages']['en']['recognize_login'], $cfg['messages']['en']['recognize_quota']));
 // ---- Adil kullanim tavani (QuotaHelper::rateDecision saf karar fonksiyonu) ----
 require_once $root . '/helpers/QuotaHelper.php';
-$rl = ['minute' => 6, 'hour' => 60, 'day' => 100];
-$d = QuotaHelper::rateDecision(['minute' => 0, 'hour' => 0, 'day' => 0], $rl);
+$rl = ['burst' => 1, 'hour' => 10, 'day' => 30];
+$d = QuotaHelper::rateDecision(['burst' => 0, 'hour' => 0, 'day' => 0], $rl);
 check('rate: bos sayimda izin verilir', $d['allowed'] === true && $d['scope'] === '');
-$d = QuotaHelper::rateDecision(['minute' => 6, 'hour' => 10, 'day' => 10], $rl);
-check('rate: dakika tavani engeller', $d['allowed'] === false && $d['scope'] === 'minute' && $d['retry_after'] === 60);
-$d = QuotaHelper::rateDecision(['minute' => 1, 'hour' => 60, 'day' => 61], $rl);
+$d = QuotaHelper::rateDecision(['burst' => 1, 'hour' => 2, 'day' => 2], $rl);
+check('rate: 2 dakikalik pencere engeller (retry_after 120 sn)',
+    $d['allowed'] === false && $d['scope'] === 'burst' && $d['retry_after'] === 120);
+$d = QuotaHelper::rateDecision(['burst' => 0, 'hour' => 10, 'day' => 11], $rl);
 check('rate: saat tavani engeller', $d['allowed'] === false && $d['scope'] === 'hour' && $d['retry_after'] === 3600);
-$d = QuotaHelper::rateDecision(['minute' => 1, 'hour' => 2, 'day' => 100], $rl);
+$d = QuotaHelper::rateDecision(['burst' => 0, 'hour' => 2, 'day' => 30], $rl);
 check('rate: gun tavani engeller', $d['allowed'] === false && $d['scope'] === 'day' && $d['retry_after'] === 86400);
-$d = QuotaHelper::rateDecision(['minute' => 5, 'hour' => 59, 'day' => 99], $rl);
+$d = QuotaHelper::rateDecision(['burst' => 0, 'hour' => 9, 'day' => 29], $rl);
 check('rate: tavanin bir altinda izin verilir', $d['allowed'] === true);
-$d = QuotaHelper::rateDecision(['minute' => 999, 'hour' => 999, 'day' => 999], ['minute' => 0, 'hour' => 0, 'day' => 0]);
+$d = QuotaHelper::rateDecision(['burst' => 999, 'hour' => 999, 'day' => 999], ['burst' => 0, 'hour' => 0, 'day' => 0]);
 check('rate: 0 limit = pencere kapali', $d['allowed'] === true);
-$d = QuotaHelper::rateDecision(['minute' => 6, 'hour' => 60, 'day' => 100], $rl);
-check('rate: en dar pencere once bildirilir', $d['scope'] === 'minute');
+$d = QuotaHelper::rateDecision(['burst' => 1, 'hour' => 10, 'day' => 30], $rl);
+check('rate: en dar pencere once bildirilir', $d['scope'] === 'burst');
+// Yapilandirmadan okunan degerler metinlerde yazan esiklerle ayni olmali (bayatlama korumasi).
+$constants = require $root . '/config/constants.php';
+$cfgRl = $constants['QUOTA']['rate_limits'];
+check('constants: adil kullanim esikleri 1 / 10 / 30',
+    (int) $cfgRl['per_2min'] === 1 && (int) $cfgRl['per_hour'] === 10 && (int) $cfgRl['per_day'] === 30);
 
 check('recognize quota message points at Pro page',
     strpos((string) $cfg['messages']['tr']['recognize_quota'], '/tr/abonelikler') !== false
