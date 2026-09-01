@@ -49,8 +49,33 @@ class UniversityApplicationHelper
             ];
         }
 
-        // Optional interests
-        $data['interests'] = $_POST['interests'] ?? '';
+        // Optional interests.
+        //
+        // Iki istemci iki farkli bicimde gonderiyor:
+        //   - Flutter (ProkitUniversityFormScreen): tek string, "A, B, C"
+        //   - Web formu (templates/university_application_form.html): interests[] DIZI
+        // Eskiden yalnizca string bekleniyordu; dizi gelince e-posta govdesinde
+        // "Array" yaziyor ve insertObject dizi degerle patliyordu. Ikisi de kabul.
+        $rawInterests = $_POST['interests'] ?? '';
+
+        if (is_array($rawInterests)) {
+            $parts = array();
+
+            foreach ($rawInterests as $one) {
+                $one = trim(strip_tags((string) $one));
+
+                if ($one !== '') {
+                    $parts[] = $one;
+                }
+            }
+
+            $rawInterests = implode(', ', $parts);
+        } else {
+            $rawInterests = trim(strip_tags((string) $rawInterests));
+        }
+
+        // Serbest metin: makul bir ust sinir (DB kolonu ve e-posta govdesi icin).
+        $data['interests'] = mb_substr($rawInterests, 0, 500);
 
         // Handle ID card upload
         if (!isset($_FILES['id_card']) || $_FILES['id_card']['error'] !== UPLOAD_ERR_OK) {
