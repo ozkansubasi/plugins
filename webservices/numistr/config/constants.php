@@ -27,6 +27,10 @@ return [
         // Kabul edilen issuer'lar (Auth0 tenant URL'leri; sondaki / opsiyonel)
         'issuers' => [
             'https://dev-ja5k8sumb7005j4n.us.auth0.com/',
+            // Custom domain (2026-09-05). Eskisiyle BİRLİKTE yaşar: JwtHelper JWKS URL'sini
+            // token'ın kendi iss'inden türetir, bu yüzden iki issuer aynı anda geçerlidir.
+            // Eskisi, mobil 0.5.2 yayılana kadar SİLİNMEZ (kapalı testteki 0.5.1 bunu kullanıyor).
+            'https://login.numistr.org/',
         ],
 
         // Kabul edilen audience'lar (Auth0 Application Client ID'leri)
