@@ -7,7 +7,7 @@
     <license>GNU General Public License version 2 or later</license>
     <authorEmail>info@numistr.org</authorEmail>
     <authorUrl>https://www.numistr.org</authorUrl>
-    <version>1.3.0</version>
+    <version>1.4.0</version>
     <description>PLG_SYSTEM_NUMISTRBILLING_XML_DESCRIPTION</description>
 
     <files>
@@ -56,6 +56,10 @@
                     <option value="0">Hayır (yalnızca say ve raporla)</option>
                     <option value="1">Evet</option>
                 </field>
+                <field name="reconcile_with_api" type="radio" layout="joomla.form.field.radio.switcher" label="iyzico ile uzlaştır (okuma ucu)" description="Housekeeping'de dönemi biten/bitecek abonelikler iyzico'dan okunur: yeni tahsilat varsa kira uzatılır, iptal/ödenmemiş ise durum eşitlenir, tahsilat yoksa Pro kaldırılır. Webhook kaçsa bile doğru sonuç. (1.4.0)" default="1">
+                    <option value="0">JNO</option><option value="1">JYES</option>
+                </field>
+                <field name="reconcile_lookahead_days" type="number" label="Uzlaştırma ufku (gün)" description="Dönem sonu bu kadar gün içinde olan abonelikler iyzico'dan okunur" default="3" />
                 <field name="housekeeping_key" type="password" label="Housekeeping anahtarı" description="n8n cron çağrısı için gizli anahtar (boşsa uç kapalı)" filter="raw" autocomplete="off" />
             </fieldset>
             <fieldset name="pages" label="Sayfalar">

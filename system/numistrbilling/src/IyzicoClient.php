@@ -65,6 +65,12 @@ class NumistrIyzicoClient
         return $this->request('GET', '/v2/subscription/subscriptions/' . rawurlencode($subscriptionReferenceCode));
     }
 
+    /** Abonelik listesi (sayfalı; 'data.items[]', her öğe orders[] taşır). 1.4.0 */
+    public function searchSubscriptions(int $page = 1, int $count = 100): array
+    {
+        return $this->request('GET', '/v2/subscription/subscriptions?page=' . max(1, $page) . '&count=' . max(1, min(100, $count)));
+    }
+
     /** Aboneliği iptal et (gelecek tahsilatlar durur). */
     public function cancelSubscription(string $subscriptionReferenceCode): array
     {
@@ -104,7 +110,10 @@ class NumistrIyzicoClient
         }
 
         // signature = hex(HMACSHA256(randomKey + uri.path + request.body, secretKey))
-        $signature = hash_hmac('sha256', $random . $path . $bodyStr, $this->secretKey);
+        // 1.4.0 — imzaya yalnız YOL girer, query string GİRMEZ (2026-08-25 bulgusu;
+        // sayfalı arama ucu bu satirla ilk kez GET+query yapiyor).
+        $signPath  = explode('?', $path, 2)[0];
+        $signature = hash_hmac('sha256', $random . $signPath . $bodyStr, $this->secretKey);
         $authStr   = 'apiKey:' . $this->apiKey . '&randomKey:' . $random . '&signature:' . $signature;
 
         $headers = [

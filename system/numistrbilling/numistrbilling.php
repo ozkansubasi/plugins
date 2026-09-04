@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Billing (iyzico web subscription)
  * @subpackage  plg_system_numistrbilling
- * @version     1.3.0
+ * @version     1.4.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -19,6 +19,7 @@
  *   ...&format=json&task=status  (giriş gerekli: Hesabım için abonelik özeti)
  *   ...&task=housekeeping&key=…  (n8n cron: süresi geçmiş abonelikleri kapat)
  *   onUserBeforeDelete        (Joomla olayı: hesap silinmeden aktif iyzico aboneliğini iptal et — 1.3.0)
+ *   housekeeping → reconcileWithApi (1.4.0: dönemi biten/bitecek abonelikleri iyzico okuma ucuyla uzlaştır)
  */
 
 defined('_JEXEC') or die;
@@ -677,14 +678,20 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $cutoff    = Factory::getDate('-' . $graceDays . ' days')->toSql();
 
         // Kira (lease) modeli: iyzico İPTALLERDE webhook GÖNDERMİYOR (destek teyidi,
-        // 27.08.2026) ve abonelik okuma uçları bu hesapta veri dönmüyor. Bu yüzden
-        // "ACTIVE" tek başına güvenilir değil; asıl doğruluk kaynağı current_period_end.
-        // Yenileme tahsilatı webhook'u dönemi uzatır; uzatılmayan satır kendiliğinden düşer.
+        // 27.08.2026). "ACTIVE" tek başına güvenilir değil; asıl doğruluk kaynağı
+        // current_period_end. Yenileme webhook'u (subscription.order.success) dönemi uzatır.
         //
-        // Süpürme, yenileme webhook'ları CANLI olarak doğrulanana kadar varsayılan
-        // KAPALI. Kapalıyken bile süresi geçmiş ACTIVE satırlar sayılıp raporlanır ki
-        // cron sessizce hiçbir şey yapıyor görünmesin.
+        // 1.4.0 — okuma uçları 27.08.2026'dan beri çalışıyor. Süpürmeden ÖNCE dönemi
+        // biten/bitecek satırlar iyzico'dan okunur (reconcileWithApi): yeni dönem
+        // tahsilatı varsa kira uzatılır, iptal/ödenmemiş ise durum eşitlenir, tahsilat
+        // yoksa satır EXPIRED yapılır ve aşağıdaki süpürme Pro'yu kaldırır. Böylece
+        // webhook kaçsa bile ödeyen müşteri Pro kaybetmez, iptal eden de Pro'da kalmaz.
+        //
+        // expire_active_after_period: API'siz kör süpürme (uzlaştırma kapalıyken ya da
+        // API ulaşılamazken). Varsayılan KAPALI; kapalıyken süresi geçmiş ACTIVE satırlar
+        // sayılıp raporlanır ki cron sessizce hiçbir şey yapıyor görünmesin.
         $expireActive = (int) $this->params->get('expire_active_after_period', 0) === 1;
+        $recon        = $this->reconcileWithApi($cutoff);
 
         $db       = Factory::getDbo();
         $statuses = [$db->quote('CANCELED'), $db->quote('UNPAID')];
@@ -750,6 +757,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'housekeeping',
             'checked=' . count($rows) . ' revoked=[' . implode(',', $revoked) . ']'
             . ' expireActive=' . ($expireActive ? '1' : '0') . ' staleActive=' . $staleActive
+            . ' reconcile=' . json_encode($recon)
         );
 
         return $this->ok([
@@ -758,7 +766,198 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'revoked'       => $revoked,
             'expire_active' => $expireActive,
             'stale_active'  => $staleActive,
+            'reconcile'     => $recon,
         ]);
+    }
+
+    /**
+     * 1.4.0 — Okuma tabanlı uzlaştırma (süpürmeden önce çalışır).
+     *
+     * Dönem sonu `now + reconcile_lookahead_days` içinde kalan (geçmiş olanlar dâhil)
+     * ACTIVE/UNPAID iyzico satırları için GET /v2/subscription/subscriptions/{ref}:
+     *  - orders[] içinde SUCCESS ve endPeriod > current_period_end olan sipariş varsa
+     *    → kira uzatılır (current_period_end = en geç endPeriod), status API'deki, Pro garanti.
+     *  - subscriptionStatus CANCELED/UNPAID/EXPIRED ise → status eşitlenir (revoke süpürmede,
+     *    dönem sonu + tolerans geçince).
+     *  - subscriptionStatus ACTIVE, tahsilat yok ve dönem sonu toleransı da geçmişse
+     *    → status EXPIRED (kullanıcı hâlâ Pro grubundaysa süpürme bu satırı yakalayıp kaldırır).
+     *  - API hata/erişilemez → satıra DOKUNULMAZ, api_errors sayılır (kör süpürme yalnız
+     *    expire_active_after_period açıksa devreye girer).
+     * Kayıt: her uzatma/eşitleme numistr_billing_events'e `reconcile` olayı olarak yazılır.
+     *
+     * @param  string $cutoff  Tolerans düşülmüş SQL tarihi (housekeeping ile aynı)
+     * @return array  {enabled, checked, extended, synced, expired, api_errors}
+     */
+    private function reconcileWithApi(string $cutoff): array
+    {
+        $stats = ['enabled' => false, 'checked' => 0, 'extended' => 0, 'synced' => 0, 'expired' => 0, 'api_errors' => 0];
+
+        if ((int) $this->params->get('reconcile_with_api', 1) !== 1) {
+            return $stats;
+        }
+
+        $stats['enabled'] = true;
+        $lookahead = max(0, (int) $this->params->get('reconcile_lookahead_days', 3));
+        $horizon   = Factory::getDate('+' . $lookahead . ' days')->toSql();
+
+        try {
+            $db = Factory::getDbo();
+            $db->setQuery(
+                'SELECT * FROM ' . $db->quoteName('numistr_subscriptions')
+                . ' WHERE ' . $db->quoteName('source') . ' = ' . $db->quote(self::SOURCE)
+                . ' AND ' . $db->quoteName('status') . ' IN (' . $db->quote('ACTIVE') . ', ' . $db->quote('UNPAID') . ')'
+                . ' AND ' . $db->quoteName('current_period_end') . ' IS NOT NULL'
+                . ' AND ' . $db->quoteName('current_period_end') . ' < ' . $db->quote($horizon)
+                . ' ORDER BY ' . $db->quoteName('current_period_end') . ' ASC LIMIT 100'
+            );
+            $rows = (array) $db->loadObjectList();
+        } catch (\Throwable $e) {
+            $this->log('reconcile-db-error', $e->getMessage());
+
+            return $stats;
+        }
+
+        $searchIndex = null; // referenceCode => abonelik verisi (tembel yüklenir)
+
+        foreach ($rows as $row) {
+            $subRef = (string) $row->subscription_reference_code;
+            $userId = (int) $row->user_id;
+            $stats['checked']++;
+
+            $data = null;
+
+            try {
+                // 1) Detay ucu. 2) Başarısızsa (ör. 100001 — planı silinmiş/eski kayıtlar)
+                //    arama listesinden eşleştir (liste koşu başına bir kez çekilir).
+                $res = $this->client()->getSubscription($subRef);
+
+                if (($res['status'] ?? '') === 'success' && \is_array($res['data'] ?? null)) {
+                    $data = $res['data'];
+                } else {
+                    if ($searchIndex === null) {
+                        $searchIndex = $this->searchSubscriptionsIndex();
+                    }
+
+                    if (isset($searchIndex[$subRef])) {
+                        $data = $searchIndex[$subRef];
+                        $this->log('reconcile-fallback', 'subRef=' . $subRef . ' detail=' . ($res['errorCode'] ?? '?') . ' → aramadan eşleşti');
+                    } else {
+                        $this->log('reconcile-api-error', 'subRef=' . $subRef . ' detail=' . ($res['errorCode'] ?? '?') . ' aramada da yok');
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->log('reconcile-api-exception', 'subRef=' . $subRef . ' ' . $e->getMessage());
+            }
+
+            if ($data === null) {
+                $stats['api_errors']++;
+                continue;
+            }
+
+            $apiStatus = strtoupper((string) ($data['subscriptionStatus'] ?? ''));
+            $paidUntil = null; // ms
+
+            foreach ((array) ($data['orders'] ?? []) as $order) {
+                if (strtoupper((string) ($order['orderStatus'] ?? '')) !== 'SUCCESS') {
+                    continue;
+                }
+
+                $end = (int) ($order['endPeriod'] ?? 0);
+
+                if ($end > 0 && ($paidUntil === null || $end > $paidUntil)) {
+                    $paidUntil = $end;
+                }
+            }
+
+            $rowEnd      = (string) $row->current_period_end;
+            $paidUntilTs = $paidUntil !== null ? intdiv($paidUntil, 1000) : 0;
+            $paidUntilSq = $paidUntilTs > 0 ? Factory::getDate('@' . $paidUntilTs)->toSql() : '';
+            $action      = 'unchanged';
+
+            if ($paidUntilSq !== '' && strtotime($paidUntilSq) > strtotime($rowEnd)) {
+                // Yeni dönem tahsil edilmiş (webhook gelmemiş/kaçmış olsa da) → kirayı uzat
+                $this->updateSubscription($subRef, [
+                    'status'             => $apiStatus !== '' ? $apiStatus : 'ACTIVE',
+                    'current_period_end' => $paidUntilSq,
+                ]);
+
+                if ($apiStatus === '' || $apiStatus === 'ACTIVE') {
+                    $this->grantPro($userId);
+                }
+
+                $stats['extended']++;
+                $action = 'extended:' . $paidUntilSq;
+            } elseif (\in_array($apiStatus, ['CANCELED', 'UNPAID', 'EXPIRED'], true) && $apiStatus !== (string) $row->status) {
+                // iyzico iptal/başarısız bildirimi göndermez → durumu okuyarak eşitle
+                $fields = ['status' => $apiStatus];
+
+                if ($apiStatus === 'CANCELED' && empty($row->canceled_at)) {
+                    $fields['canceled_at'] = Factory::getDate()->toSql();
+                }
+
+                $this->updateSubscription($subRef, $fields);
+                $stats['synced']++;
+                $action = 'synced:' . $apiStatus;
+            } elseif ($apiStatus === 'ACTIVE' && (string) $row->status === 'ACTIVE' && $rowEnd < $cutoff) {
+                // API ulaşıldı, tahsilat yok, tolerans da geçti → kira bitti
+                $this->updateSubscription($subRef, ['status' => 'EXPIRED']);
+                $stats['expired']++;
+                $action = 'expired';
+            }
+
+            if ($action !== 'unchanged') {
+                $this->log('reconcile', 'subRef=' . $subRef . ' user=' . $userId . ' apiStatus=' . $apiStatus . ' ' . $action);
+                $this->recordBillingEvent(
+                    'reconcile:' . $subRef . ':' . substr(md5($action . $rowEnd), 0, 12),
+                    'reconcile',
+                    (string) ($row->customer_reference_code ?? ''),
+                    $userId,
+                    $subRef,
+                    $action,
+                    (string) json_encode(['apiStatus' => $apiStatus, 'paidUntil' => $paidUntilSq, 'rowEnd' => $rowEnd])
+                );
+            }
+        }
+
+        return $stats;
+    }
+
+    /**
+     * GET /v2/subscription/subscriptions listesini sayfalayarak referenceCode'a göre indeksler.
+     * Detay ucunun 100001 döndüğü kayıtlar için yedek kaynak. En çok 20 sayfa × 100 kayıt.
+     *
+     * @return array<string, array>
+     */
+    private function searchSubscriptionsIndex(): array
+    {
+        $index = [];
+
+        for ($page = 1; $page <= 20; $page++) {
+            $res = $this->client()->searchSubscriptions($page, 100);
+
+            if (($res['status'] ?? '') !== 'success') {
+                $this->log('reconcile-search-error', 'page=' . $page . ' code=' . ($res['errorCode'] ?? '?'));
+                break;
+            }
+
+            $items = (array) ($res['data']['items'] ?? []);
+
+            foreach ($items as $item) {
+                $ref = (string) ($item['referenceCode'] ?? '');
+
+                if ($ref !== '') {
+                    $index[$ref] = $item;
+                }
+            }
+
+            if (\count($items) < 100 || $page >= (int) ($res['data']['pageCount'] ?? 1)) {
+                break;
+            }
+        }
+
+        $this->log('reconcile-search', 'indexed=' . \count($index));
+
+        return $index;
     }
 
     // ==================================================================
