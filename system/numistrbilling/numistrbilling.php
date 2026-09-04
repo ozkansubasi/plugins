@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Billing (iyzico web subscription)
  * @subpackage  plg_system_numistrbilling
- * @version     1.0.0
+ * @version     1.3.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -18,12 +18,14 @@
  *   ...&task=cardupdate   (GET, giriş gerekli: kart güncelleme formu)
  *   ...&format=json&task=status  (giriş gerekli: Hesabım için abonelik özeti)
  *   ...&task=housekeeping&key=…  (n8n cron: süresi geçmiş abonelikleri kapat)
+ *   onUserBeforeDelete        (Joomla olayı: hesap silinmeden aktif iyzico aboneliğini iptal et — 1.3.0)
  */
 
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Access\Access;
 use Joomla\CMS\Factory;
+use Joomla\CMS\Language\Text;
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Session\Session;
 use Joomla\CMS\Uri\Uri;
@@ -509,6 +511,91 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $this->app->redirect($this->accountUrl());
 
         return null;
+    }
+
+    // ==================================================================
+    // 5b) Hesap silme: aktif iyzico aboneliğini önce iptal et (BACKLOG S10)
+    // ==================================================================
+
+    /**
+     * Joomla kullanıcısı silinmeden hemen önce (yönetici paneli, API, CLI) o kullanıcının
+     * ACTIVE iyzico aboneliğini iptal eder. Aksi hâlde hesap silinir, iyzico kartı dönem
+     * dönem çekmeye devam eder ve satırı hesaba bağlayan tek şey ölü bir user_id kalır.
+     *
+     * Legacy listener: CMSPlugin `on*` metotlarını otomatik kaydeder; sistem eklentisi her
+     * uygulamada yüklü olduğundan User::delete()'in tetiklediği olay buraya düşer.
+     * Dönüş değeri Joomla tarafından okunmaz (silme engellenemez) — bu yüzden başarısızlık
+     * log + yönetici uyarısıyla görünür kılınır, silme devam eder.
+     *
+     * Abonelik satırı SİLİNMEZ (fatura/ödeme kaydı 10 yıl saklanır — Gizlilik Politikası §8);
+     * yalnızca status=CANCELED + canceled_at yazılır. Play (RevenueCat) aboneliği sunucudan
+     * iptal edilemez; varsa yöneticiye ayrıca uyarı verilir.
+     *
+     * @param  array|object  $user  Silinen kullanıcının özellikleri (User::getProperties())
+     * @return void
+     */
+    public function onUserBeforeDelete($user): void
+    {
+        $userId = (int) (\is_array($user) ? ($user['id'] ?? 0) : ($user->id ?? 0));
+
+        if ($userId <= 0) {
+            return;
+        }
+
+        $row = $this->activeSubscriptionRow($userId);
+
+        if ($row) {
+            $subRef = (string) $row->subscription_reference_code;
+            $ok     = false;
+            $detail = '';
+
+            try {
+                $res    = $this->client()->cancelSubscription($subRef);
+                $ok     = (($res['status'] ?? '') === 'success');
+                $detail = $ok ? 'success' : ('code=' . ($res['errorCode'] ?? '?') . ' msg=' . ($res['errorMessage'] ?? ''));
+            } catch (\Throwable $e) {
+                $detail = 'exception: ' . $e->getMessage();
+            }
+
+            if ($ok) {
+                $this->updateSubscription($subRef, [
+                    'status'      => 'CANCELED',
+                    'canceled_at' => Factory::getDate()->toSql(),
+                ]);
+                $this->log('userdelete-cancel-ok', 'user=' . $userId . ' subRef=' . $subRef);
+                $this->adminMessage(Text::sprintf('PLG_SYSTEM_NUMISTRBILLING_USERDELETE_CANCELED', $userId, $subRef), 'message');
+            } else {
+                $this->log('userdelete-cancel-FAILED', 'user=' . $userId . ' subRef=' . $subRef . ' ' . $detail);
+                $this->adminMessage(Text::sprintf('PLG_SYSTEM_NUMISTRBILLING_USERDELETE_FAILED', $userId, $subRef), 'error');
+            }
+
+            $this->recordBillingEvent(
+                'userdelete:' . $subRef,
+                'user.before_delete',
+                (string) ($row->customer_reference_code ?? ''),
+                $userId,
+                $subRef,
+                $ok ? 'cancel-on-delete' : 'cancel-on-delete-FAILED',
+                (string) json_encode(['user_id' => $userId, 'detail' => $detail, 'at' => Factory::getDate()->toSql()])
+            );
+        }
+
+        if ($this->hasActivePlayEntitlement($userId)) {
+            $this->log('userdelete-play-active', 'user=' . $userId . ' — Play aboneliği sunucudan iptal edilemez');
+            $this->adminMessage(Text::sprintf('PLG_SYSTEM_NUMISTRBILLING_USERDELETE_PLAY_ACTIVE', $userId), 'warning');
+        }
+    }
+
+    /** Yönetici/site uygulamasında mesaj kuyruğa alınır; CLI/API'de sessizce atlanır. */
+    private function adminMessage(string $msg, string $type): void
+    {
+        try {
+            if ($this->app && method_exists($this->app, 'enqueueMessage')) {
+                $this->app->enqueueMessage($msg, $type);
+            }
+        } catch (\Throwable $e) {
+            // mesaj akışı silmeyi asla bozmasın
+        }
     }
 
     // ==================================================================
