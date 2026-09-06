@@ -912,6 +912,16 @@ class AssistantController
     // Routes
     // ======================================================================
 
+    /**
+     * Public glossary page. Terminology chunks are attributed here, never to the
+     * private Google Doc they were ingested from.
+     */
+    private static function glossaryUrl(string $lang): string
+    {
+        return (string) (self::$config['site_base'] ?? 'https://numistr.org')
+            . '/' . $lang . '/numizmatik-karsiliklar';
+    }
+
     private static function routeSite($llm, string $message, array $history, string $lang, string $rules, array $limits, NumisTRAssistantCoreKb $coreKb): array
     {
         $model  = (string) (self::$config['models']['site'] ?? 'gemini-2.5-flash');
@@ -941,9 +951,15 @@ class AssistantController
     private static function routeTools($llm, $db, int $userMsgId, string $route, string $message, array $history, string $lang, string $rules, array $limits): array
     {
         $model = (string) (self::$config['models']['tools'] ?? 'claude-haiku-4-5');
+        // search_kb is on BOTH lists on purpose. The classifier reliably sends
+        // "patina nedir" to explain, but reads denomination names as coin types:
+        // "stater nedir" / "tetradrahmi nedir" land here instead (2026-09-06). Without
+        // terminology access the model filled the gap from its own memory, which is the
+        // same failure the explain route was just fixed for. Sharpening the classifier
+        // lowers the frequency; this makes a mis-route harmless.
         $names = $route === 'settlement'
-            ? ['search_settlements', 'get_settlement', 'search_site']
-            : ['search_coins', 'get_variant', 'search_site'];
+            ? ['search_settlements', 'get_settlement', 'search_site', 'search_kb']
+            : ['search_coins', 'get_variant', 'search_site', 'search_kb'];
 
         $tools = new NumisTRAssistantTools(self::$constants, self::$config, self::$secrets, $db);
         $tools->setMessageId($userMsgId > 0 ? $userMsgId : null);
@@ -963,6 +979,16 @@ class AssistantController
                 if (!empty($it['url']) && !empty($it['title'])) {
                     $sources[$it['url']] = ['title' => (string) $it['title'], 'url' => (string) $it['url']];
                 }
+            }
+
+            // Terminology chunks carry no public url of their own (see searchKb),
+            // so attribute them to the glossary page once.
+            if ($name === 'search_kb' && !empty($items)) {
+                $gUrl = self::glossaryUrl($lang);
+                $sources[$gUrl] = [
+                    'title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler',
+                    'url'   => $gUrl,
+                ];
             }
 
             return $result;
@@ -1027,8 +1053,7 @@ class AssistantController
 
         // Terminology chunks come from Google Docs; their content_url is the private
         // source document, so cite the public glossary page instead (once).
-        $glossaryUrl   = (string) (self::$config['site_base'] ?? 'https://numistr.org')
-            . '/' . $lang . '/numizmatik-karsiliklar';
+        $glossaryUrl   = self::glossaryUrl($lang);
         $glossaryTitle = $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler';
 
         foreach ($kbItems as $it) {
@@ -1082,7 +1107,8 @@ class AssistantController
         $system = "Classify the user's message for the NumisTR assistant (ancient Anatolian coins website). "
             . "Reply with EXACTLY ONE WORD from: site, coin_search, settlement, explain, other.\n"
             . "- site: questions about the NumisTR website, membership, Pro, prices, app, scanning quota, contact, data usage, how to use the site, what NumisTR is.\n"
-            . "- coin_search: wants to find/list coins or a specific coin by region, metal, date, mint, ruler, type (e.g. 'silver coins of Caria 4th century BC', 'Ephesus tetradrachms', 'coins of Croesus').\n"
+            . "- coin_search: wants to FIND or LIST actual coins by region, metal, date, mint, ruler or type (e.g. 'silver coins of Caria 4th century BC', 'Ephesus tetradrachms', 'coins of Croesus').\n"
+            . "  DISAMBIGUATION: a bare 'X nedir' / 'what is X' / 'X ne demek' with no region, date, metal, mint or ruler is a DEFINITION request -> explain, even when X is a denomination (stater, tetradrahmi, obol, drahmi). Choose coin_search only when the user wants to see coins.\n"
             . "- settlement: asks about an ancient city/site/settlement: where it is, its history, whether it minted coins (e.g. 'Aphrodisias nerede', 'tell me about Sardes').\n"
             . "- explain: asks the meaning/definition of a numismatic term or concept (e.g. 'what is a stater', 'obverse ne demek', 'kontrmark nedir'), OR a history/culture/iconography/'why' question about Anatolian coins, rulers, symbols, regions, hoards or collecting that NumisTR articles can answer (e.g. 'Kyzikos sikkelerinde neden balik var', 'who was Croesus', 'what is patina').\n"
             . "- other: greetings only, chit-chat, coin valuation/price requests, politics, coding, anything unrelated.\n"
@@ -1093,6 +1119,10 @@ class AssistantController
             . "\"Aphrodisias hangi bolgede?\" -> settlement\n"
             . "\"Where is Xanthos\" -> settlement\n"
             . "\"Tetradrahmi nedir?\" -> explain\n"
+            . "\"Stater nedir?\" -> explain\n"
+            . "\"Obol ne demek\" -> explain\n"
+            . "\"Efes tetradrahmileri\" -> coin_search\n"
+            . "\"Karya staterlerini goster\" -> coin_search\n"
             . "\"What does incuse mean\" -> explain\n"
             . "\"Kyzikos neden sikkelerine balik koydu?\" -> explain\n"
             . "\"Why did Lydians use lions on coins\" -> explain\n"
