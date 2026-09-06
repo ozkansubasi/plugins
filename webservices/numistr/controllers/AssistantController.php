@@ -999,7 +999,7 @@ class AssistantController
         $kb   = $tools->execute('search_kb', ['query' => $message, 'lang' => $lang], $lang);
         $site = $tools->execute('search_site', ['query' => $message, 'lang' => $lang, 'limit' => 4], $lang);
 
-        $kbAnswer  = (!isset($kb['error']) && trim((string) ($kb['answer'] ?? '')) !== '') ? trim((string) $kb['answer']) : '';
+        $kbItems   = (!isset($kb['error']) && !empty($kb['items'])) ? $kb['items'] : [];
         $siteItems = (!isset($site['error']) && !empty($site['items'])) ? $site['items'] : [];
 
         if (isset($kb['error'])) {
@@ -1010,36 +1010,45 @@ class AssistantController
             self::log('explain-site', (string) $site['error']);
         }
 
-        if ($kbAnswer === '' && empty($siteItems)) {
-            // nothing retrieved -> core-KB glossary behaviour (site route)
+        if (empty($kbItems) && empty($siteItems)) {
+            // Nothing retrieved above the relevance gate -> fall back to the curated
+            // core KB (site route). That file is hand-written, so the answer stays
+            // grounded; what we must never do here is let the model free-run.
             $res = self::routeSite($llm, $message, $history, $lang, $rules, $limits, $coreKb);
             $res['model'] = $model;
 
             return $res;
         }
 
-        $ctx = [];
+        // One numbered list across both stores, so a [n] citation is unambiguous.
+        $lines   = [];
+        $sources = [];
+        $n       = 0;
 
-        if ($kbAnswer !== '') {
-            $ctx[] = ($lang === 'en' ? 'TERMINOLOGY DATABASE:' : 'TERMINOLOJI VERITABANI:') . "\n" . $kbAnswer;
+        // Terminology chunks come from Google Docs; their content_url is the private
+        // source document, so cite the public glossary page instead (once).
+        $glossaryUrl   = (string) (self::$config['site_base'] ?? 'https://numistr.org')
+            . '/' . $lang . '/numizmatik-karsiliklar';
+        $glossaryTitle = $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler';
+
+        foreach ($kbItems as $it) {
+            $n++;
+            $label   = $lang === 'en' ? 'terminology' : 'terminoloji';
+            $lines[] = '[' . $n . '] ' . $it['title'] . ' (' . $label . ")\n" . $it['text'];
         }
 
-        $sources = [];
+        if (!empty($kbItems)) {
+            $sources[] = ['title' => $glossaryTitle, 'url' => $glossaryUrl];
+        }
 
-        if (!empty($siteItems)) {
-            $lines = [];
-
-            foreach (array_values($siteItems) as $i => $it) {
-                $n = $i + 1;
-                $lines[] = '[' . $n . '] ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
-                $sources[] = ['title' => $it['title'], 'url' => $it['url']];
-            }
-
-            $ctx[] = ($lang === 'en' ? 'SITE ARTICLES:' : 'SITE MAKALELERI:') . "\n" . implode("\n\n", $lines);
+        foreach ($siteItems as $it) {
+            $n++;
+            $lines[]   = '[' . $n . '] ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
+            $sources[] = ['title' => $it['title'], 'url' => $it['url']];
         }
 
         $system = $rules . "\n\n" . (string) (self::$config['prompts'][$lang]['explain_hint'] ?? '')
-            . "\n\n" . ($lang === 'en' ? 'CONTEXT:' : 'BAGLAM:') . "\n" . implode("\n\n", $ctx);
+            . "\n\n" . ($lang === 'en' ? 'CONTEXT:' : 'BAGLAM:') . "\n" . implode("\n\n", $lines);
 
         $r = $llm->geminiGenerate($model, $system, $history, $message, [
             'max_output' => (int) $limits['max_output'],
@@ -1047,12 +1056,8 @@ class AssistantController
 
         if (!$r['ok']) {
             self::log('explain-llm', $r['error']);
-            $r['text'] = $kbAnswer !== '' ? $kbAnswer : (string) ($siteItems[0]['text'] ?? '');
-        }
-
-        if ($kbAnswer !== '') {
-            $glossaryUrl = (string) (self::$config['site_base'] ?? 'https://numistr.org') . '/' . $lang . '/numizmatik-karsiliklar';
-            $sources[]   = ['title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler', 'url' => $glossaryUrl];
+            $first      = $kbItems ? $kbItems[0] : $siteItems[0];
+            $r['text']  = (string) ($first['text'] ?? '');
         }
 
         return [
@@ -1062,7 +1067,7 @@ class AssistantController
             'tokens_out' => $r['tokens_out'],
             'cost'       => NumisTRLLMClient::cost(self::$config['costs'] ?? [], $model, $r['tokens_in'], $r['tokens_out']),
             'cache_hit'  => $r['cache_hit'],
-            'sources'    => $sources,
+            'sources'    => array_values(array_slice($sources, 0, 10)),
             'cta'        => false,
         ];
     }

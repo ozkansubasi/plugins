@@ -174,7 +174,7 @@ class NumisTRAssistantTools
             ],
             [
                 'name'        => 'search_kb',
-                'description' => 'Semantic search in the NumisTR numismatic terminology knowledge base (definitions of terms such as obverse, stater, tetradrachm, countermark). Returns a short answer text.',
+                'description' => 'Semantic search in the NumisTR numismatic terminology knowledge base (definitions of terms such as obverse, stater, tetradrachm, countermark). Returns up to 8 excerpts with the term title; an empty list means the term is not in the knowledge base -- say so, do not answer from general knowledge.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
@@ -881,9 +881,22 @@ class NumisTRAssistantTools
         return ['items' => $items, 'has_more' => false];
     }
 
+    /**
+     * Semantic search over the terminology KB (n8n webhook -> Qdrant numistr_kb).
+     * Returns ['items' => [{title,url,text,score,lang}], 'result_count' => n] or ['error' => ...].
+     *
+     * The webhook returns RAW CHUNKS on purpose. It used to return a prose answer
+     * written by a second LLM, which answered from its own memory whenever retrieval
+     * came back empty -- and retrieval was in fact always empty, because the node read
+     * payload.text while the ingestion writes payload.chunk_text. The caller had no way
+     * to tell an invented answer from a retrieved one, so invented numismatics reached
+     * users labelled as the NumisTR terminology database. Never reintroduce a path that
+     * accepts a pre-written answer from this endpoint.
+     */
     public function searchKb(string $query, string $lang, string $sessionId = ''): array
     {
         $query = trim($query);
+        $lang  = $this->lang($lang, 'tr');
 
         if ($query === '') {
             return ['error' => 'query required'];
@@ -898,7 +911,7 @@ class NumisTRAssistantTools
 
         $payload = json_encode([
             'query'      => mb_substr($query, 0, 500),
-            'language'   => $lang === 'en' ? 'en' : 'tr',
+            'language'   => $lang,
             'session_id' => $sessionId !== '' ? $sessionId : ('assistant-' . substr(sha1((string) $this->messageId . $query), 0, 12)),
         ], JSON_UNESCAPED_UNICODE);
 
@@ -923,22 +936,46 @@ class NumisTRAssistantTools
         $data = json_decode((string) $raw, true);
 
         if (!is_array($data)) {
-            // some n8n flows return plain text
-            return ['answer' => self::htmlToText((string) $raw, 2000), 'result_count' => 1];
+            return ['error' => 'knowledge base returned non-json'];
         }
 
-        // tolerate common n8n response shapes
+        // tolerate the common n8n shape where the payload is wrapped in a list
         if (isset($data[0]) && is_array($data[0])) {
             $data = $data[0];
         }
 
-        $answer = $data['answer'] ?? $data['output'] ?? $data['text'] ?? $data['response'] ?? '';
-        $count  = (int) ($data['result_count'] ?? $data['count'] ?? ($answer !== '' ? 1 : 0));
-
-        if (!is_string($answer)) {
-            $answer = json_encode($answer, JSON_UNESCAPED_UNICODE);
+        if (!isset($data['results']) || !is_array($data['results'])) {
+            // Old contract (or an n8n error payload). Deliberately treated as "nothing
+            // retrieved" rather than falling back to any 'answer' field.
+            return ['items' => [], 'result_count' => 0];
         }
 
-        return ['answer' => self::htmlToText($answer, 2000), 'result_count' => $count];
+        $min   = (float) ($this->config['tools']['kb_search_min_score'] ?? 0.45);
+        $items = [];
+
+        foreach ($data['results'] as $r) {
+            if (!is_array($r) || (float) ($r['score'] ?? 0) < $min) {
+                continue;
+            }
+
+            $text = trim((string) ($r['text'] ?? ''));
+
+            if ($text === '') {
+                continue;
+            }
+
+            $items[] = [
+                'title' => (string) ($r['title'] ?? ''),
+                // The webhook returns the term's source document (a private Google Doc).
+                // Never surface it: KB chunks are attributed to the public glossary page
+                // by the caller. Blanked here so no future caller can leak it.
+                'url'   => '',
+                'text'  => mb_substr($text, 0, 1200, 'UTF-8'),
+                'lang'  => (string) ($r['lang'] ?? $lang),
+                'score' => round((float) ($r['score'] ?? 0), 3),
+            ];
+        }
+
+        return ['items' => $items, 'result_count' => count($items)];
     }
 }
