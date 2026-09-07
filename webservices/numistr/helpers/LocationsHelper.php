@@ -43,41 +43,129 @@ class NumisTRLocationsHelper
 
         // Language-aware name with TR fallback
         $nameExpr = ($lang === 'en')
-            ? 'COALESCE(NULLIF(' . $db->quoteName('name_en') . ", ''), " . $db->quoteName('name_tr') . ')'
-            : $db->quoteName('name_tr');
+            ? 'COALESCE(NULLIF(' . $db->quoteName('l.name_en') . ", ''), " . $db->quoteName('l.name_tr') . ')'
+            : $db->quoteName('l.name_tr');
+
+        // Makale koprusu: 2026-09-08'de backfill edildi (loc_id -> article_id_tr/en).
+        // alias ve catid DENORMALIZE EDILMEDI; burada canli okunuyor ki makale
+        // yeniden adlandirilinca URL kendiliginden dogru kalsin.
+        $artCol = $lang === 'en' ? 'l.article_id_en' : 'l.article_id_tr';
 
         $q = $db->getQuery(true)
-            ->select($db->quoteName('loc_id'))
-            ->select($db->quoteName('lat'))
-            ->select($db->quoteName('lng'))
+            ->select($db->quoteName('l.loc_id'))
+            ->select($db->quoteName('l.lat'))
+            ->select($db->quoteName('l.lng'))
             ->select($nameExpr . ' AS ' . $db->quoteName('name'))
-            ->select($db->quoteName('has_coins'))
-            ->from($db->quoteName('locations'))
-            ->where($db->quoteName('published') . ' = 1')
-            ->where($db->quoteName('loc_id') . ' IS NOT NULL')
-            ->where($db->quoteName('lat') . ' BETWEEN ' . (float)$swLat . ' AND ' . (float)$neLat)
-            ->where($db->quoteName('lng') . ' BETWEEN ' . (float)$swLng . ' AND ' . (float)$neLng);
+            ->select($db->quoteName('l.has_coins'))
+            ->select($db->quoteName('c.id', 'article_id'))
+            ->select($db->quoteName('c.alias', 'article_alias'))
+            ->select($db->quoteName('c.catid', 'article_catid'))
+            ->select($db->quoteName('cat.alias', 'cat_alias'))
+            ->from($db->quoteName('locations', 'l'))
+            ->join('LEFT', $db->quoteName('#__content', 'c')
+                . ' ON ' . $db->quoteName('c.id') . ' = ' . $db->quoteName($artCol)
+                . ' AND ' . $db->quoteName('c.state') . ' = 1')
+            ->join('LEFT', $db->quoteName('#__categories', 'cat')
+                . ' ON ' . $db->quoteName('cat.id') . ' = ' . $db->quoteName('c.catid'))
+            ->where($db->quoteName('l.published') . ' = 1')
+            ->where($db->quoteName('l.loc_id') . ' IS NOT NULL')
+            ->where($db->quoteName('l.lat') . ' BETWEEN ' . (float)$swLat . ' AND ' . (float)$neLat)
+            ->where($db->quoteName('l.lng') . ' BETWEEN ' . (float)$swLng . ' AND ' . (float)$neLng);
 
         if (!empty($opts['only_coins'])) {
-            $q->where($db->quoteName('has_coins') . ' = 1');
+            $q->where($db->quoteName('l.has_coins') . ' = 1');
         }
         if (!empty($opts['region'])) {
-            $q->where($db->quoteName('region_code') . ' = ' . $db->quote((string)$opts['region']));
+            $q->where($db->quoteName('l.region_code') . ' = ' . $db->quote((string)$opts['region']));
         }
 
         $q->setLimit($limit);
         $db->setQuery($q);
         $rows = $db->loadAssocList() ?: [];
 
-        return array_map(static function ($r) {
-            return [
+        $base     = rtrim((string)($this->config['site_base'] ?? 'https://numistr.org'), '/');
+        $fallback = $lang === 'en' ? 'ancient-settlements' : 'antik-yerlesimler';
+        $menuMap  = $this->menuAliasMap($lang);
+
+        $out = [];
+
+        foreach ($rows as $r) {
+            // Koordinatlar 6 haneye yuvarlanir (~11 cm). Yuvarlanmadan
+            // "38.46667817000000155758243636228144168853759765625" gibi degerler
+            // gidiyordu; olcum 2026-09-08: yukun %31'i sirf hassasiyet sismesiydi.
+            $item = [
                 'id'        => $r['loc_id'],
-                'lat'       => (float)$r['lat'],
-                'lng'       => (float)$r['lng'],
+                'lat'       => round((float)$r['lat'], 6),
+                'lng'       => round((float)$r['lng'], 6),
                 'name'      => $r['name'],
                 'has_coins' => (bool)(int)$r['has_coins'],
             ];
-        }, $rows);
+
+            $articleId = (int)($r['article_id'] ?? 0);
+
+            if ($articleId > 0 && !empty($r['article_alias'])) {
+                $catid = (int)($r['article_catid'] ?? 0);
+                $menu  = $menuMap[$catid] ?? ((string)($r['cat_alias'] ?? '') !== '' ? (string)$r['cat_alias'] : $fallback);
+
+                $item['url'] = $base . '/' . $lang . '/' . rawurlencode($menu)
+                    . '/' . $articleId . '-' . rawurlencode((string)$r['article_alias']);
+            }
+            // Makale yoksa 'url' HIC eklenmez -- bos string ya da uydurma URL degil.
+
+            $out[] = $item;
+        }
+
+        return $out;
+    }
+
+    /**
+     * catid -> menu alias haritasi, TEK sorguda.
+     *
+     * Asistan tarafindaki menuAliasFor() her catid icin ayri sorgu atiyor; bir bbox
+     * yaniti onlarca kategoriye yayilabildigi icin burada toplu cozuyoruz.
+     * Menude karsiligi olmayan kategoriler icin cagiran taraf #__categories.alias'a,
+     * o da yoksa dil varsayilanina duser.
+     */
+    private function menuAliasMap(string $lang): array
+    {
+        static $cache = [];
+
+        if (isset($cache[$lang])) {
+            return $cache[$lang];
+        }
+
+        $db  = Factory::getDbo();
+        $map = [];
+
+        try {
+            $q = $db->getQuery(true)
+                ->select([$db->quoteName('link'), $db->quoteName('alias'), $db->quoteName('language')])
+                ->from($db->quoteName('#__menu'))
+                ->where($db->quoteName('published') . ' = 1')
+                ->where($db->quoteName('link') . ' LIKE ' . $db->quote('%option=com_content&view=category%'))
+                ->where($db->quoteName('language') . ' IN ('
+                    . $db->quote($lang === 'en' ? 'en-GB' : 'tr-TR') . ', ' . $db->quote('*') . ')')
+                ->order($db->quoteName('language') . ' DESC');   // dile ozgu kayit '*' onune gecsin
+
+            $db->setQuery($q);
+
+            foreach (($db->loadAssocList() ?: []) as $row) {
+                if (preg_match('~[?&]id=(\d+)~', (string)$row['link'], $m)) {
+                    $cid = (int)$m[1];
+
+                    if (!isset($map[$cid]) && (string)$row['alias'] !== '') {
+                        $map[$cid] = (string)$row['alias'];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Menu okunamazsa harita yine calisir; cagiran taraf yedege duser.
+            $map = [];
+        }
+
+        $cache[$lang] = $map;
+
+        return $map;
     }
 
     /**
@@ -111,10 +199,15 @@ class NumisTRLocationsHelper
         return [
             'id'          => $r['loc_id'],
             'name'        => $pick($r['name_en'] ?? null, $r['name_tr'] ?? null),
-            'summary'     => $pick($r['summary_en'] ?? null, $r['summary_tr'] ?? null),
+            // summary_* alanlari hic doldurulmadi (2026-09-08 olcumu: hepsi NULL).
+            // Gercek metin desc_* icinde -- Pleiades kokenli kisa aciklama. Uctan
+            // hic yayinlanmiyordu, yani harita popup'i bos kalirdi. Yedege baglandi.
+            'summary'     => $pick($r['summary_en'] ?? null, $r['summary_tr'] ?? null)
+                             ?: $pick($r['desc_en'] ?? null, $r['desc_tr'] ?? null),
             'content'     => $pick($r['content_en'] ?? null, $r['content_tr'] ?? null),
-            'lat'         => isset($r['lat']) ? (float)$r['lat'] : null,
-            'lng'         => isset($r['lng']) ? (float)$r['lng'] : null,
+            // 6 hane ~11 cm; yuvarlanmadan tam float hassasiyeti gidiyordu
+            'lat'         => isset($r['lat']) ? round((float)$r['lat'], 6) : null,
+            'lng'         => isset($r['lng']) ? round((float)$r['lng'], 6) : null,
             'region_code' => $r['region_code'] ?? null,
             'has_coins'   => (bool)(int)($r['has_coins'] ?? 0),
             'coin_count'  => (int)($r['coin_count'] ?? 0),
