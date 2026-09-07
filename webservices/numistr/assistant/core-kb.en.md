@@ -45,7 +45,7 @@ Coins and settlements are organised by ancient region (region code = English nam
 Each coin "variant" record has: title (with catalogue reference, e.g. "Aspendus Imhoof-Blumer 1901-2 p. 316, 21"), region, metal (silver, gold, bronze, electrum, lead, iron), date range (BC as negative years: -400 = 400 BC), mint (Latin/English spelling: ephesus, sardes, cyzicus), authority (issuing king/emperor/city), obverse and reverse descriptions, weight/diameter when known, and watermarked images. Images are served from private storage with a watermark; high-resolution images are for Pro members. Sources: published catalogues and academic databases (citation given on each record).
 
 ## 5. Ancient settlement articles
-There are TR and EN articles for 1,600+ ancient cities/sites. Each article covers history, location/region, archaeological remains, whether the city minted coins (has-coins) and links to coin records when available. Articles are listed by region category and marked on the interactive map; clicking a settlement on the map opens its article.
+There are TR and EN articles for 1,600+ ancient cities/sites. Each article covers history, location/region, archaeological remains, whether the city minted coins (has-coins) and links to coin records when available. Articles are listed by region category. The ancient map (/en/ancient-map) currently shows the main ancient regions and mints; **not all 1,600+ settlements are marked on it yet** — enriching the map with every settlement is work in progress. Clicking a point on the map opens the related page.
 
 ## 6. Membership, Pro and quotas
 - Browsing the site, coin lists and settlement articles is **free**, no account needed.
@@ -61,8 +61,8 @@ There are TR and EN articles for 1,600+ ancient cities/sites. Each article cover
 - University students can apply for free Pro access with the "University Application" form in the app.
 - App sign-in: Google account or e-mail/password (Auth0). Password reset is done from the app.
 
-## 7. Coin recognition (AnatolianCoins app)
-Photograph the obverse (and optionally the reverse) in the app; the AI performs a visual similarity search and lists the closest variants with confidence scores. Tips: plain background, direct light, coin filling the frame, sharp focus; adding both sides improves accuracy. The system is an identification aid; consult an expert for a definitive attribution. Uploaded images are not stored permanently (max 24 h for debugging).
+## 7. Coin recognition (app + web assistant)
+Upload a photo of the obverse (and optionally the reverse) **in the AnatolianCoins app or in the AI Assistant on the website**; the AI performs a visual similarity search and lists the closest variants with confidence scores. Both channels require an account and share the same monthly recognition quota. Tips: plain background, direct light, coin filling the frame, sharp focus; adding both sides improves accuracy. The system is an identification aid; consult an expert for a definitive attribution. The uploaded image is **never stored**: it is not written to disk, only processed in memory and discarded as soon as the request finishes. Only a SHA-256 digest of the image, the result and request metadata are logged (see Privacy Policy §6).
 
 ## 8. Short numismatic glossary (~40 terms)
 - **Coin**: metal money struck by a state/city authority with standard weight and type.
@@ -119,8 +119,8 @@ Photograph the obverse (and optionally the reverse) in the app; the AI performs 
 8. **Is there an iOS version?** Currently Android (Google Play); iOS is planned.
 9. **When does my scan quota reset?** On the 1st of each month.
 10. **Which regions are covered?** The 16 main ancient Anatolian regions plus Other (see the region list).
-11. **Where is the ancient map?** At /en/ancient-map; click a settlement to open its article.
+11. **Where is the ancient map?** At /en/ancient-map. It currently shows the main regions and mints; adding every settlement to the map is in progress.
 12. **I am a student, can we collaborate?** Yes; students can apply for free Pro in the app, and for collaboration write to info@numistr.org.
 13. **I found an error, how do I report it?** E-mail info@numistr.org with the record URL and a description.
-14. **Do you match coin images?** Yes, the AI recognition in the app does; the website only offers search and browsing.
+14. **Do you match coin images?** Yes. Photo recognition runs both in the AnatolianCoins app and in the **AI Assistant on the website** (both require an account; a free account gets 10 recognitions per month). The site also offers search and browsing.
 15. **Is there Turkish content?** Yes, all main content is in Turkish under /tr/.

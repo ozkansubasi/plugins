@@ -45,7 +45,7 @@ Sikke ve yerleşim içerikleri şu antik bölgelere göre düzenlenir (bölge ko
 Her sikke "varyant" kaydı şu alanları içerir: başlık (kaynak/katalog referansıyla, örn. "Aspendus Imhoof-Blumer 1901-2 p. 316, 21"), bölge, metal (silver=gümüş, gold=altın, bronze=bronz, electrum=elektrum, lead=kurşun, iron=demir), tarih aralığı (MÖ negatif yıl: -400 = MÖ 400), darphane (mint, Latince/İngilizce yazım: ephesus, sardes, cyzicus), otorite (basımı yapan kral/imparator/kent), ön yüz (obverse) ve arka yüz (reverse) betimlemesi, varsa ağırlık/çap ve filigranlı görseller. Görseller özel depodan filigranla sunulur; yüksek çözünürlüklü görseller Pro üyeler içindir. Veri kaynakları: yayımlanmış kataloglar ve akademik veritabanları (kaynak atfı her kayıtta verilir).
 
 ## 5. Antik yerleşim makaleleri
-1600'den fazla antik kent/yerleşim için TR ve EN makale vardır. Her makalede: tarihçe, konum/bölge, arkeolojik kalıntılar, sikke basıp basmadığı (has-coins) ve varsa sikke kayıtlarına bağlantı bulunur. Makaleler bölge kategorilerinde listelenir ve antik haritada işaretlidir. Haritada bir yerleşime tıklanınca makalesine gidilir.
+1600'den fazla antik kent/yerleşim için TR ve EN makale vardır. Her makalede: tarihçe, konum/bölge, arkeolojik kalıntılar, sikke basıp basmadığı (has-coins) ve varsa sikke kayıtlarına bağlantı bulunur. Makaleler bölge kategorilerinde listelenir. Antik harita (/tr/antik-harita) şu an başlıca antik bölgeleri ve darphaneleri gösterir; **1600+ yerleşimin tamamı henüz haritada işaretli değildir** — haritanın tüm yerleşimlerle zenginleştirilmesi çalışması sürüyor. Haritada bir noktaya tıklanınca ilgili sayfaya gidilir.
 
 ## 6. Üyelik, Pro ve kotalar
 - Siteyi gezmek, sikke listelerini ve yerleşim makalelerini okumak **ücretsizdir**, üyelik gerekmez.
@@ -61,8 +61,8 @@ Her sikke "varyant" kaydı şu alanları içerir: başlık (kaynak/katalog refer
 - Üniversite öğrencileri için ücretsiz Pro erişim programı vardır: uygulamadaki "Üniversite Başvurusu" formu ile başvurulur.
 - Uygulama girişi: Google hesabı veya e-posta/şifre (Auth0). Şifre sıfırlama uygulamadan yapılır.
 
-## 7. Sikke tanıma (AnatolianCoins uygulaması)
-Uygulamada ön yüz (ve isteğe bağlı arka yüz) fotoğrafı çekilir; yapay zekâ görsel benzerlik araması ile veritabanındaki en yakın varyantları güven skoruyla listeler. İpuçları: düz zemin, doğrudan ışık, sikke kadrajı dolduracak şekilde, odaklı fotoğraf; her iki yüzü de eklemek doğruluğu artırır. Sistem bir tanımlama yardımcısıdır; kesin teşhis için uzman görüşü önerilir. Yüklenen görseller kalıcı saklanmaz (en fazla 24 saat hata ayıklama amaçlı).
+## 7. Sikke tanıma (uygulama + web asistanı)
+Ön yüz (ve isteğe bağlı arka yüz) fotoğrafı **AnatolianCoins uygulamasında veya web sitesindeki AI Asistan'da** yüklenir; yapay zekâ görsel benzerlik araması ile veritabanındaki en yakın varyantları güven skoruyla listeler. Her iki kanalda da üyelik gerekir ve aynı aylık tanıma kotası geçerlidir. İpuçları: düz zemin, doğrudan ışık, sikke kadrajı dolduracak şekilde, odaklı fotoğraf; her iki yüzü de eklemek doğruluğu artırır. Sistem bir tanımlama yardımcısıdır; kesin teşhis için uzman görüşü önerilir. Yüklenen görsel **hiç saklanmaz**: diske yazılmaz, yalnızca bellekte işlenir ve işlem biter bitmez silinir. Kayıtlarda yalnızca görselin SHA-256 özeti, sonuç ve istek bilgileri tutulur (bkz. Gizlilik Politikası §6).
 
 ## 8. Kısa numizmatik sözlük (~40 terim)
 - **Sikke**: Devlet/kent otoritesince basılmış, ağırlık ve tipi standart metal para.
@@ -119,8 +119,8 @@ Uygulamada ön yüz (ve isteğe bağlı arka yüz) fotoğrafı çekilir; yapay z
 8. **iOS sürümü var mı?** Şu an Android (Google Play) yayında; iOS planlanmaktadır.
 9. **Tarama kotam ne zaman yenilenir?** Her ayın 1'inde.
 10. **Hangi bölgeler kapsanıyor?** 16 ana antik Anadolu bölgesi + Diğer (bkz. bölge listesi).
-11. **Antik haritaya nasıl ulaşırım?** /tr/antik-harita sayfasından; yerleşimlere tıklayarak makalelere gidilir.
+11. **Antik haritaya nasıl ulaşırım?** /tr/antik-harita sayfasından. Harita şu an başlıca bölge ve darphaneleri gösterir; yerleşimlerin tamamının haritaya eklenmesi sürüyor.
 12. **Öğrenciyim, birlikte çalışabilir miyiz?** Evet; üniversite öğrencileri ücretsiz Pro programına uygulamadan başvurabilir, iş birliği için info@numistr.org.
 13. **Bir hata/eksik buldum, nasıl bildiririm?** info@numistr.org adresine kayıt adresi ve açıklama ile yazın.
-14. **Sikke görsel eşleştirme yapıyor musunuz?** Evet, uygulamadaki yapay zekâ tanıma bunu yapar; web sitesinde yalnızca arama ve listeleme vardır.
+14. **Sikke görsel eşleştirme yapıyor musunuz?** Evet. Hem AnatolianCoins uygulamasında hem de **web sitesindeki AI Asistan'da** fotoğraftan tanıma yapılır (her ikisi de üyelik ister; ücretsiz üyelikte ayda 10 tanıma). Site ayrıca arama ve listeleme sunar.
 15. **İngilizce içerik var mı?** Evet, tüm ana içerikler /en/ altında İngilizcedir.

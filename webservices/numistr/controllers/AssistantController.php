@@ -665,6 +665,123 @@ class AssistantController
      *
      * @return array{title:string,user_note:string,text:string}
      */
+    /**
+     * Bolge kodu -> okunabilir ad. Bilinmeyen kod temizlenip oldugu gibi dondurulur
+     * (uydurma yapilmaz, kod da gizlenmez).
+     */
+    private static function regionLabel(?string $code, string $lang): string
+    {
+        $code = strtolower(trim((string) $code));
+
+        if ($code === '') {
+            return '';
+        }
+
+        $key = preg_replace('/-coins$/', '', $code);
+
+        $tr = [
+            'lydia' => 'Lidya', 'ionia' => 'Iyonya', 'caria' => 'Karya', 'lycia' => 'Likya',
+            'phrygia' => 'Frigya', 'mysia' => 'Misya', 'bithynia' => 'Bitinya',
+            'pamphylia' => 'Pamfilya', 'cilicia' => 'Kilikya', 'clicia' => 'Kilikya',
+            'cappadocia' => 'Kapadokya', 'galatia' => 'Galatya', 'pisidia' => 'Pisidya',
+            'troas' => 'Troas', 'paphlagonia' => 'Paflagonya', 'aeolis' => 'Aiolis',
+            'pontus' => 'Pontus', 'other' => 'Diger Bolgeler',
+        ];
+
+        if ($lang !== 'en' && isset($tr[$key])) {
+            return $tr[$key];
+        }
+
+        return ucwords(str_replace('-', ' ', $key));
+    }
+
+    /**
+     * Metal anahtari -> okunabilir ad. Anahtar taninmazsa oldugu gibi dondurulur.
+     */
+    private static function metalLabel(?string $key, string $lang): string
+    {
+        $key = strtolower(trim((string) $key));
+
+        if ($key === '') {
+            return '';
+        }
+
+        $tr = [
+            'silver' => 'gumus', 'gold' => 'altin', 'bronze' => 'bronz',
+            'electrum' => 'elektrum', 'lead' => 'kursun', 'iron' => 'demir',
+            'copper' => 'bakir', 'billon' => 'billon', 'potin' => 'potin',
+        ];
+
+        return ($lang !== 'en' && isset($tr[$key])) ? $tr[$key] : $key;
+    }
+
+    /**
+     * Tarih araligi etiketi. Negatif yil = MO. Yalnizca dolu degerlerden kurulur.
+     */
+    private static function dateRangeLabel($from, $to, string $lang): string
+    {
+        $from = ($from === null || $from === '') ? null : (int) $from;
+        $to   = ($to === null || $to === '') ? null : (int) $to;
+
+        if ($from === null && $to === null) {
+            return '';
+        }
+
+        if ($from === null) {
+            $from = $to;
+        }
+
+        if ($to === null) {
+            $to = $from;
+        }
+
+        $isEn = $lang === 'en';
+
+        $one = static function (int $y) use ($isEn): string {
+            return $y < 0
+                ? ($isEn ? abs($y) . ' BC' : 'MO ' . abs($y))
+                : ($isEn ? 'AD ' . $y : 'MS ' . $y);
+        };
+
+        if ($from === $to) {
+            return $one($from);
+        }
+
+        // Ayni cagdaysa donem bir kez yazilir: "MO 400-370" / "400-370 BC"
+        if (($from < 0) === ($to < 0)) {
+            $a = abs($from);
+            $b = abs($to);
+
+            if ($from < 0) {
+                return $isEn ? ($a . '-' . $b . ' BC') : ('MO ' . $a . '-' . $b);
+            }
+
+            return $isEn ? ('AD ' . $a . '-' . $b) : ('MS ' . $a . '-' . $b);
+        }
+
+        return $one($from) . ' - ' . $one($to);
+    }
+
+    /**
+     * Tanima sonucunu konusma metnine cevirir.
+     *
+     * 2026-09-08: onceki hali yalnizca baslik + guven skoru basan bir sablondu.
+     * `enrichMatches()` her eslesme icin `getVariant()` cagirip on/arka yuz tasvirini,
+     * darphaneyi, otoriteyi ve birimi cekiyordu -- hepsi atiliyordu.
+     *
+     * GROUNDING: metin tamamen DB alanlarindan kurulur, LLM CAGRILMAZ. Bos alan icin
+     * cumle KURULMAZ: tahmin edilmez, "muhtemelen" denmez. Boylece uydurma yapisal
+     * olarak imkansizdir ve her taramaya ek gecikme/maliyet binmez. Derin yorum,
+     * kullanicinin takip sorusuyla LLM + arac rotasinda yapilir.
+     *
+     * Kademe farki yukarida `enrichMatches()` tarafindan uygulanir (ucretsiz 3, Pro 10);
+     * bu metod eline gecen kadarini bicimlendirir. Kademe farki KAC eslesme gorundugudur,
+     * hangi olgunun gizlendigi degil -- olgu saklanmaz.
+     *
+     * Toplam sayi verilmez ("sonsuzluk algisi" ilkesi).
+     *
+     * @return array{title:string,user_note:string,text:string}
+     */
     private static function recognitionSummary(array $matches, string $lang): array
     {
         $isEn      = $lang === 'en';
@@ -676,30 +793,133 @@ class AssistantController
                 'title'     => $fallTitle,
                 'user_note' => $userNote,
                 'text'      => $isEn
-                    ? 'I could not match this photo to a coin in the database. A sharp photo on a plain background, with the coin filling the frame, usually helps — and adding the other side improves accuracy.'
+                    ? 'I could not match this photo to a coin in the database. A sharp photo on a plain background, with the coin filling the frame, usually helps -- and adding the other side improves accuracy.'
                     : 'Bu fotografi veritabanindaki bir sikkeyle eslestiremedim. Duz zeminde, kadraji dolduran net bir fotograf genellikle yardimci olur; diger yuzu de eklemek dogrulugu artirir.',
             ];
         }
 
-        $lines = [];
+        $conf = static function ($c) use ($isEn): string {
+            if ($c === null || $c === '') {
+                return '';
+            }
 
-        foreach ($matches as $i => $m) {
-            $conf    = isset($m['confidence']) && $m['confidence'] !== null ? ' (%' . round(((float) $m['confidence']) * 100) . ')' : '';
-            $title   = !empty($m['title']) ? $m['title'] : ('#' . (int) ($m['article_id'] ?? 0));
-            $lines[] = ($i + 1) . '. ' . $title . $conf;
+            $pct = (int) round(((float) $c) * 100);
+
+            return $isEn ? ' (' . $pct . '% similarity)' : ' (%' . $pct . ' benzerlik)';
+        };
+
+        $first = $matches[0];
+        $out   = [];
+
+        $out[] = $isEn ? 'Closest match for your photo:' : 'Fotografiniza en yakin eslesme:';
+        $out[] = '';
+
+        $title = !empty($first['title']) ? (string) $first['title'] : ('#' . (int) ($first['article_id'] ?? 0));
+        $out[] = '**' . $title . '**' . $conf($first['confidence'] ?? null);
+
+        // Kunye satiri: yalnizca DOLU alanlar birlestirilir
+        $meta   = [];
+        $region = self::regionLabel($first['region'] ?? null, $lang);
+
+        if ($region !== '') {
+            $meta[] = $isEn ? $region : $region . ' bolgesi';
         }
 
-        $head = $isEn ? 'Closest matches for your photo:' : 'Fotografiniza en yakin eslesmeler:';
-        $tail = $isEn
-            ? 'Ask about any of them (for example "tell me about the first one") and I will give the details.'
-            : 'Istediginizi sorabilirsiniz (ornegin "birincisini anlat"), ayrintilari vereyim.';
+        if (!empty($first['mint'])) {
+            $mint   = ucwords((string) $first['mint']);
+            $meta[] = $isEn ? $mint . ' mint' : $mint . ' darphanesi';
+        }
 
-        $title = !empty($matches[0]['title']) ? (string) $matches[0]['title'] : $fallTitle;
+        $dates = self::dateRangeLabel($first['date_from'] ?? null, $first['date_to'] ?? null, $lang);
+
+        if ($dates !== '') {
+            $meta[] = $dates;
+        }
+
+        $metal = self::metalLabel($first['metal'] ?? null, $lang);
+
+        if ($metal !== '') {
+            $meta[] = $metal;
+        }
+
+        if (!empty($first['denomination'])) {
+            $meta[] = (string) $first['denomination'];
+        }
+
+        if ($meta) {
+            $out[] = implode(' - ', $meta);
+        }
+
+        if (!empty($first['authority'])) {
+            $out[] = ($isEn ? 'Authority: ' : 'Otorite: ') . (string) $first['authority'];
+        }
+
+        if (!empty($first['obverse'])) {
+            $out[] = ($isEn ? 'Obverse: ' : 'On yuz: ') . (string) $first['obverse'];
+        }
+
+        if (!empty($first['reverse'])) {
+            $out[] = ($isEn ? 'Reverse: ' : 'Arka yuz: ') . (string) $first['reverse'];
+        }
+
+        if (!empty($first['weight'])) {
+            $out[] = ($isEn ? 'Weight: ' : 'Agirlik: ') . (string) $first['weight'];
+        }
+
+        if (!empty($first['diameter'])) {
+            $out[] = ($isEn ? 'Diameter: ' : 'Cap: ') . (string) $first['diameter'];
+        }
+
+        if (!empty($first['url'])) {
+            $out[] = (string) $first['url'];
+        }
+
+        // Kalan eslesmeler: her biri tek satir
+        $rest = array_slice($matches, 1);
+
+        if ($rest) {
+            $out[] = '';
+            $out[] = $isEn ? 'Other close matches:' : 'Diger yakin eslesmeler:';
+
+            foreach ($rest as $i => $m) {
+                $t    = !empty($m['title']) ? (string) $m['title'] : ('#' . (int) ($m['article_id'] ?? 0));
+                $bits = [];
+                $r    = self::regionLabel($m['region'] ?? null, $lang);
+
+                if ($r !== '') {
+                    $bits[] = $r;
+                }
+
+                $d = self::dateRangeLabel($m['date_from'] ?? null, $m['date_to'] ?? null, $lang);
+
+                if ($d !== '') {
+                    $bits[] = $d;
+                }
+
+                $tail  = $bits ? ' -- ' . implode(' - ', $bits) : '';
+                $out[] = ($i + 2) . '. ' . $t . $conf($m['confidence'] ?? null) . $tail;
+            }
+        }
+
+        // Dusuk benzerlikte kesinlik iddia edilmez
+        $topConf = isset($first['confidence']) ? (float) $first['confidence'] : 1.0;
+
+        if ($topConf > 0 && $topConf < 0.6) {
+            $out[] = '';
+            $out[] = $isEn
+                ? 'Similarity is low, so treat this as a lead rather than an attribution -- adding the other side, or a sharper photo, usually helps.'
+                : 'Benzerlik dusuk; bunu kesin teshis degil bir ipucu olarak degerlendirin -- diger yuzu eklemek ya da daha net bir fotograf genellikle yardimci olur.';
+        }
+
+        $out[] = '';
+        $out[] = $isEn
+            ? 'Ask me about any of them (for example "tell me more about the second one") and I will go deeper.'
+            : 'Istediginiz eslesmeyi sorabilirsiniz (ornegin "ikincisini anlat"), daha ayrintili anlatayim.';
 
         return [
             'title'     => mb_substr($title, 0, 120),
             'user_note' => $userNote,
-            'text'      => $head . "\n" . implode("\n", $lines) . "\n\n" . $tail,
+            'text'      => implode("\n", $out),
         ];
     }
 
