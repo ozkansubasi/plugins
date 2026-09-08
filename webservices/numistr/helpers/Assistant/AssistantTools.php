@@ -1118,6 +1118,17 @@ class NumisTRAssistantTools
             'query'      => mb_substr($query, 0, 500),
             'language'   => $lang,
             'session_id' => $sessionId !== '' ? $sessionId : ('assistant-' . substr(sha1((string) $this->messageId . $query), 0, 12)),
+            // numistr_kb holds 2,509 terminology points AND 21,937 settlement
+            // points. Ask for terminology only: settlements were taking 30% of
+            // the eight result slots, and because approximate search degrades as
+            // the collection grows, the real term was sometimes missed entirely -
+            // "Exergue" and "Hekte" returned NOTHING while their chunks sat in
+            // the collection. Settlement content is served better by search_site,
+            // which has real public URLs; the copies here carry private Google
+            // Doc links that this method blanks, so they can never be cited.
+            // Measured 2026-09-08: settlement share 30% -> 0%, real queries with
+            // a usable hit 75/80 -> 80/80, invented queries matching 6/10 -> 2/10.
+            'scope'      => 'terminology',
         ], JSON_UNESCAPED_UNICODE);
 
         $ch = curl_init($url);
