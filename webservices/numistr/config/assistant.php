@@ -92,7 +92,12 @@ return [
         // Below the gate we drop the chunk entirely: an off-topic chunk that reaches
         // the model gets cited as a source, which is worse than having no source.
         'site_search_min_score' => 0.45,
-        'kb_search_min_score'   => 0.45,
+        // 0.45 -> 0.35 (2026-09-08). The higher value was an attempt to keep
+        // invented terms out by score alone, which cannot work: real and
+        // invented score ranges overlap. The word gate in searchKb() does that
+        // job now, so this can come down and stop refusing genuine questions.
+        // Measured: real answerable 86/120 -> 101/120, invented 6/30 -> 0/30.
+        'kb_search_min_score'   => 0.35,
         'kb_timeout'      => 20,
     ],
 

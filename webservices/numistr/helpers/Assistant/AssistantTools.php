@@ -311,6 +311,196 @@ class NumisTRAssistantTools
         return $text;
     }
 
+    /**
+     * True when a retrieved chunk carries mojibake and must not reach the user.
+     *
+     * Measured 2026-09-08: ~45% of the chunks numistr_kb returns are UTF-8 text
+     * that some earlier ingestion run decoded as GBK before storing, so "Altın"
+     * comes back as "Alt谋n" and "Basım" as "Bas谋m". The source Google Docs are
+     * clean (verified against Drive), the corruption lives in the stored points,
+     * and a clean and a corrupt generation of the same document sit side by side
+     * in the collection.
+     *
+     * Until that corpus is repaired this gate keeps the garbled generation out
+     * of the assistant's context. It costs recall on purpose: quoting a term
+     * definition back at the reader as "Bas谋m" is worse than saying nothing, and
+     * grounding on unreadable text invites the model to "repair" it by guessing
+     * - which is the fabrication route closed on 2026-09-06.
+     *
+     * Detection: this corpus is Turkish and English numismatics prose, so any
+     * CJK / Kana / Hangul codepoint is proof of a decoding accident rather than
+     * content. The second pattern catches the other classic form, UTF-8 read as
+     * Latin-1 ("Ã¼", "Ä±"), which these pipelines have produced before.
+     */
+    /**
+     * Question words, conjunctions, common verb forms and domain-generic nouns.
+     * These are not what a question is ABOUT, so the word gate must not require
+     * a chunk to contain them.
+     *
+     * Safety note: extending this list can never weaken the gate. The gate rests
+     * on the invented term matching nothing, and an invented term is never a stop
+     * word. Every entry added here only stops a genuine question being refused.
+     */
+    private const GATE_STOPWORDS = 'nedir ne demek demektir demektedir anlama anlaminda gelir gelen geliyor '
+        . 'nasil nicin neden hangi hangisi kim kimdir kimler nelerdir nerede neresi neresinde '
+        . 'nereden nereye kac kadar bir bu su ve ile veya ama mi mi mu mu icin olan olarak olur '
+        . 'olusur olusum olustur olusan var yok vardir yoktur hakkinda bilgi bilgisi acikla anlat '
+        . 'anlatir soyle bahset ozetle bulunur bulunan bulundugu denir denilen denen adlandirilir '
+        . 'ifade eder edilir edilen kullanilir kullanilan kullanim yapilir yapilan gorulur gorunur '
+        . 'gosterir tasir icerir sayilir gecer basildi basilir basilan basim donemde donemi tarihi '
+        . 'tarih ornek ornekleri turleri turu cesitleri arasinda uzerinde uzerindeki uzerine ustunde '
+        . 'altinda yuzunde yuzune iliskin dair '
+        . 'sikke sikkeler sikkenin sikkeye sikkede sikkeyi sikkelerin madeni para '
+        . 'what is are was were the a an of does do did mean meaning means how why which who whom '
+        . 'where when tell me about explain definition define term terms coin coins coinage on in '
+        . 'for and or to with from used call called known refers refer type types example examples';
+
+    /** Case- and diacritic-folded form used for all gate comparisons. */
+    public static function normaliseForMatch(?string $s): string
+    {
+        // Fold the Turkish capitals before mb_strtolower, which otherwise turns
+        // "İ" into "i" plus a combining dot and breaks the comparison.
+        $s = strtr((string) $s, [
+            'İ' => 'i', 'I' => 'i', 'Ş' => 's', 'Ğ' => 'g', 'Ü' => 'u',
+            'Ö' => 'o', 'Ç' => 'c', 'Â' => 'a', 'Î' => 'i', 'Û' => 'u', 'É' => 'e',
+        ]);
+        $s = mb_strtolower($s, 'UTF-8');
+
+        return strtr($s, [
+            'ı' => 'i', 'ş' => 's', 'ğ' => 'g', 'ü' => 'u',
+            'ö' => 'o', 'ç' => 'c', 'â' => 'a', 'î' => 'i', 'û' => 'u', 'é' => 'e',
+        ]);
+    }
+
+    /**
+     * Turkish is agglutinative, so a question says "sikkesi" where the chunk says
+     * "sikke". Comparing on a short prefix absorbs the suffix without needing a
+     * stemmer; five characters keeps "drahmi"/"drahmisi" together while still
+     * telling "zarkanion" apart from every real word in the corpus.
+     */
+    public static function matchStem(string $token): string
+    {
+        return mb_strlen($token, 'UTF-8') > 5 ? mb_substr($token, 0, 5, 'UTF-8') : $token;
+    }
+
+    /** Content words of a query: what the reader is actually asking about. */
+    public static function queryTerms(?string $query): array
+    {
+        static $stop = null;
+
+        if ($stop === null) {
+            $stop = array_flip(preg_split('/\s+/', self::GATE_STOPWORDS) ?: []);
+        }
+
+        $parts = preg_split('/[^\p{L}\p{N}]+/u', self::normaliseForMatch($query)) ?: [];
+        $out   = [];
+
+        foreach ($parts as $p) {
+            if ($p === '' || mb_strlen($p, 'UTF-8') < 3) {
+                continue;
+            }
+
+            // The stem is checked too, so "sikkesi" is dropped along with "sikke".
+            // Without that, "zarkanion sikkesi nedir" would match every coin chunk
+            // and carry the invented term through the gate (measured, 2026-09-08).
+            if (isset($stop[$p]) || isset($stop[self::matchStem($p)])) {
+                continue;
+            }
+
+            $out[$p] = true;
+        }
+
+        return array_keys($out);
+    }
+
+    /** True when this chunk mentions at least one of the query's content words. */
+    public static function chunkMentionsTerms(array $terms, string $haystack): bool
+    {
+        if (!$terms) {
+            return true;   // nothing to judge on - fall back to the score alone
+        }
+
+        $hay = self::normaliseForMatch($haystack);
+
+        foreach ($terms as $t) {
+            if (mb_strpos($hay, self::matchStem($t), 0, 'UTF-8') !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The word gate, at query level: can the KB answer this at all?
+     *
+     * Why a gate and not a threshold. Measured 2026-09-08 over 120 real and 30
+     * invented queries: real scores run p5 0.346 / median 0.551, invented ones
+     * top out at 0.454. The ranges overlap, so NO threshold separates them -
+     * cosine similarity scores topical closeness, not "is this term in the KB".
+     * At 0.35 alone, 26 of 30 invented queries still produced an answer.
+     *
+     * The gate asks a different question: does the retrieved text actually
+     * contain the words the reader asked about? "zarkanion" appears in no chunk,
+     * so nothing survives and the assistant says it does not know. Results with
+     * the gate: invented 0/30 through, real answerable 101/120 (a threshold of
+     * 0.45 with no gate answered 86/120, so this is better on both counts).
+     *
+     * Only words of six characters or more must be found. Shorter ones are
+     * generic ("kac", "eder") and requiring them refused genuine questions;
+     * requiring every word cost real recall for no gain in safety (measured).
+     */
+    public static function kbCanAnswer(array $terms, array $chunks): bool
+    {
+        $long = [];
+
+        foreach ($terms as $t) {
+            if (mb_strlen($t, 'UTF-8') >= 6) {
+                $long[] = $t;
+            }
+        }
+
+        if (!$long) {
+            return true;
+        }
+
+        $hay = '';
+
+        foreach ($chunks as $c) {
+            $hay .= ' ' . ($c['title'] ?? '') . ' ' . ($c['text'] ?? '');
+        }
+
+        $hay = self::normaliseForMatch($hay);
+
+        foreach ($long as $t) {
+            if (mb_strpos($hay, self::matchStem($t), 0, 'UTF-8') === false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static function isCorruptText(?string $text): bool
+    {
+        $text = (string) $text;
+
+        if ($text === '') {
+            return false;
+        }
+
+        // CJK ideographs, Kana, Hangul - never legitimate in this corpus.
+        if (preg_match('/[\x{3040}-\x{30FF}\x{3400}-\x{4DBF}\x{4E00}-\x{9FFF}\x{AC00}-\x{D7AF}]/u', $text)) {
+            return true;
+        }
+
+        // UTF-8 mis-read as Latin-1: a lead byte surfacing as its own character,
+        // followed by a continuation-range one. The range covers C2-C5, i.e.
+        // U+0080-U+017F, because Turkish needs Latin Extended-A: "ı" is C4 B1
+        // and "ş" is C5 9F, so stopping at C3 would let "AltÄ±n" through.
+        return (bool) preg_match('/[\x{00C2}-\x{00C5}][\x{0080}-\x{00BF}]/u', $text);
+    }
+
     private static function clampLimit($v, int $default, int $max): int
     {
         $n = (int) ($v ?? $default);
@@ -863,8 +1053,17 @@ class NumisTRAssistantTools
         $min   = (float) ($this->config['tools']['site_search_min_score'] ?? 0.3);
         $items = [];
 
+        $corrupt = 0;
+
         foreach ((array) ($data['results'] ?? []) as $r) {
             if (!is_array($r) || (float) ($r['score'] ?? 0) < $min) {
+                continue;
+            }
+
+            // Same mojibake gate as searchKb(). numistr_site has not been
+            // measured for corruption; if it is clean this drops nothing.
+            if (self::isCorruptText(($r['title'] ?? '') . ' ' . ($r['text'] ?? ''))) {
+                $corrupt++;
                 continue;
             }
 
@@ -878,7 +1077,13 @@ class NumisTRAssistantTools
             ];
         }
 
-        return ['items' => $items, 'has_more' => false];
+        $out = ['items' => $items, 'has_more' => false];
+
+        if ($corrupt > 0) {
+            $out['corrupt_dropped'] = $corrupt;
+        }
+
+        return $out;
     }
 
     /**
@@ -950,22 +1155,33 @@ class NumisTRAssistantTools
             return ['items' => [], 'result_count' => 0];
         }
 
-        $min   = (float) ($this->config['tools']['kb_search_min_score'] ?? 0.45);
-        $items = [];
+        $min     = (float) ($this->config['tools']['kb_search_min_score'] ?? 0.35);
+        $scored  = [];
+        $corrupt = 0;
 
         foreach ($data['results'] as $r) {
             if (!is_array($r) || (float) ($r['score'] ?? 0) < $min) {
                 continue;
             }
 
-            $text = trim((string) ($r['text'] ?? ''));
+            $text  = trim((string) ($r['text'] ?? ''));
+            $title = (string) ($r['title'] ?? '');
 
             if ($text === '') {
                 continue;
             }
 
-            $items[] = [
-                'title' => (string) ($r['title'] ?? ''),
+            // Guard against the read-path mojibake fixed in the n8n workflow on
+            // 2026-09-08. It drops nothing while that fix holds; if the fix ever
+            // regresses the assistant refuses the garbled text instead of
+            // quoting it back at the reader. See isCorruptText().
+            if (self::isCorruptText($title . ' ' . $text)) {
+                $corrupt++;
+                continue;
+            }
+
+            $scored[] = [
+                'title' => $title,
                 // The webhook returns the term's source document (a private Google Doc).
                 // Never surface it: KB chunks are attributed to the public glossary page
                 // by the caller. Blanked here so no future caller can leak it.
@@ -976,6 +1192,45 @@ class NumisTRAssistantTools
             ];
         }
 
-        return ['items' => $items, 'result_count' => count($items)];
+        // ---- the word gate (see kbCanAnswer) --------------------------------
+        // The score alone cannot tell a real term from an invented one, so ask
+        // instead whether the retrieved text contains the words the reader used.
+        $terms = self::queryTerms($query);
+
+        if (!self::kbCanAnswer($terms, $scored)) {
+            return [
+                'items'        => [],
+                'result_count' => 0,
+                // The caller must be able to tell "nothing retrieved" from
+                // "retrieved, but about something else" when reading tool logs.
+                'gated'        => 'query terms absent from retrieved text',
+            ];
+        }
+
+        $items = [];
+        $gated = 0;
+
+        foreach ($scored as $c) {
+            if (!self::chunkMentionsTerms($terms, $c['title'] . ' ' . $c['text'])) {
+                $gated++;
+                continue;
+            }
+
+            $items[] = $c;
+        }
+
+        $out = ['items' => $items, 'result_count' => count($items)];
+
+        // Surfaced so thin recall is legible in the tool log as a deliberate
+        // refusal rather than as a retrieval failure.
+        if ($gated > 0) {
+            $out['gate_dropped'] = $gated;
+        }
+
+        if ($corrupt > 0) {
+            $out['corrupt_dropped'] = $corrupt;
+        }
+
+        return $out;
     }
 }
