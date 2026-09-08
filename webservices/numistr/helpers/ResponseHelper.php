@@ -30,8 +30,25 @@ class NumisTRResponseHelper
         // Cache control - 30 saniye cache (noStore ile kapatilabilir)
         $app->setHeader('Cache-Control', $noStore ? 'no-store' : 'public, max-age=30, stale-while-revalidate=30', true);
 
+        // 2026-09-08: bu sunucuda serialize_precision varsayilan (-1) DEGIL; float'lar
+        // tam ondalik acilimiyla basiliyordu:
+        //   round(40.006566, 6) -> "40.00656599999999940564521239139139652252197265625"
+        // Olcum: /v1/locations tam Anadolu yanitinin ~%31'i sirf bu sismeydi.
+        // -1 = en kisa gidip-gelen (round-trip) gosterim; PHP 7.1+ varsayilani ve
+        // deger kaybi YOK. Yalnizca bu kodlama icin ayarlanip eski deger geri konur,
+        // boylece Joomla'nin geri kalanina dokunulmaz.
+        $sp = @ini_get('serialize_precision');
+
+        if ($sp !== false && (string) $sp !== '-1') {
+            @ini_set('serialize_precision', '-1');
+        }
+
         // ETag/If-None-Match - Değişmeyen içerik için 304 döndür
         $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        if ($sp !== false && (string) $sp !== '-1') {
+            @ini_set('serialize_precision', (string) $sp);
+        }
         $etag = '"' . sha1($json) . '"';
         $app->setHeader('ETag', $etag, true);
         
