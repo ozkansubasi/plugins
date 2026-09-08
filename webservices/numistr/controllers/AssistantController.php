@@ -680,12 +680,12 @@ class AssistantController
         $key = preg_replace('/-coins$/', '', $code);
 
         $tr = [
-            'lydia' => 'Lidya', 'ionia' => 'Iyonya', 'caria' => 'Karya', 'lycia' => 'Likya',
+            'lydia' => 'Lidya', 'ionia' => 'İyonya', 'caria' => 'Karya', 'lycia' => 'Likya',
             'phrygia' => 'Frigya', 'mysia' => 'Misya', 'bithynia' => 'Bitinya',
             'pamphylia' => 'Pamfilya', 'cilicia' => 'Kilikya', 'clicia' => 'Kilikya',
             'cappadocia' => 'Kapadokya', 'galatia' => 'Galatya', 'pisidia' => 'Pisidya',
             'troas' => 'Troas', 'paphlagonia' => 'Paflagonya', 'aeolis' => 'Aiolis',
-            'pontus' => 'Pontus', 'other' => 'Diger Bolgeler',
+            'pontus' => 'Pontus', 'other' => 'Diğer Bölgeler',
         ];
 
         if ($lang !== 'en' && isset($tr[$key])) {
@@ -707,9 +707,9 @@ class AssistantController
         }
 
         $tr = [
-            'silver' => 'gumus', 'gold' => 'altin', 'bronze' => 'bronz',
-            'electrum' => 'elektrum', 'lead' => 'kursun', 'iron' => 'demir',
-            'copper' => 'bakir', 'billon' => 'billon', 'potin' => 'potin',
+            'silver' => 'gümüş', 'gold' => 'altın', 'bronze' => 'bronz',
+            'electrum' => 'elektrum', 'lead' => 'kurşun', 'iron' => 'demir',
+            'copper' => 'bakır', 'billon' => 'billon', 'potin' => 'potin',
         ];
 
         return ($lang !== 'en' && isset($tr[$key])) ? $tr[$key] : $key;
@@ -739,7 +739,7 @@ class AssistantController
 
         $one = static function (int $y) use ($isEn): string {
             return $y < 0
-                ? ($isEn ? abs($y) . ' BC' : 'MO ' . abs($y))
+                ? ($isEn ? abs($y) . ' BC' : 'MÖ ' . abs($y))
                 : ($isEn ? 'AD ' . $y : 'MS ' . $y);
         };
 
@@ -753,13 +753,13 @@ class AssistantController
             $b = abs($to);
 
             if ($from < 0) {
-                return $isEn ? ($a . '-' . $b . ' BC') : ('MO ' . $a . '-' . $b);
+                return $isEn ? ($a . '–' . $b . ' BC') : ('MÖ ' . $a . '–' . $b);
             }
 
-            return $isEn ? ('AD ' . $a . '-' . $b) : ('MS ' . $a . '-' . $b);
+            return $isEn ? ('AD ' . $a . '–' . $b) : ('MS ' . $a . '–' . $b);
         }
 
-        return $one($from) . ' - ' . $one($to);
+        return $one($from) . ' – ' . $one($to);
     }
 
     /**
@@ -785,8 +785,8 @@ class AssistantController
     private static function recognitionSummary(array $matches, string $lang): array
     {
         $isEn      = $lang === 'en';
-        $userNote  = $isEn ? '[photo uploaded]' : '[fotograf yuklendi]';
-        $fallTitle = $isEn ? 'Coin recognition' : 'Sikke tanima';
+        $userNote  = $isEn ? '[photo uploaded]' : '[fotoğraf yüklendi]';
+        $fallTitle = $isEn ? 'Coin recognition' : 'Sikke tanıma';
 
         if (!$matches) {
             return [
@@ -794,7 +794,7 @@ class AssistantController
                 'user_note' => $userNote,
                 'text'      => $isEn
                     ? 'I could not match this photo to a coin in the database. A sharp photo on a plain background, with the coin filling the frame, usually helps -- and adding the other side improves accuracy.'
-                    : 'Bu fotografi veritabanindaki bir sikkeyle eslestiremedim. Duz zeminde, kadraji dolduran net bir fotograf genellikle yardimci olur; diger yuzu de eklemek dogrulugu artirir.',
+                    : 'Bu fotoğrafı veritabanındaki bir sikkeyle eşleştiremedim. Düz zeminde, kadrajı dolduran net bir fotoğraf genellikle yardımcı olur; diğer yüzü de eklemek doğruluğu artırır.',
             ];
         }
 
@@ -811,7 +811,7 @@ class AssistantController
         $first = $matches[0];
         $out   = [];
 
-        $out[] = $isEn ? 'Closest match for your photo:' : 'Fotografiniza en yakin eslesme:';
+        $out[] = $isEn ? 'Closest match for your photo:' : 'Fotoğrafınıza en yakın eşleşme:';
         $out[] = '';
 
         $title = !empty($first['title']) ? (string) $first['title'] : ('#' . (int) ($first['article_id'] ?? 0));
@@ -822,7 +822,7 @@ class AssistantController
         $region = self::regionLabel($first['region'] ?? null, $lang);
 
         if ($region !== '') {
-            $meta[] = $isEn ? $region : $region . ' bolgesi';
+            $meta[] = $isEn ? $region : $region . ' bölgesi';
         }
 
         if (!empty($first['mint'])) {
@@ -847,7 +847,7 @@ class AssistantController
         }
 
         if ($meta) {
-            $out[] = implode(' - ', $meta);
+            $out[] = implode(' · ', $meta);
         }
 
         if (!empty($first['authority'])) {
@@ -855,19 +855,19 @@ class AssistantController
         }
 
         if (!empty($first['obverse'])) {
-            $out[] = ($isEn ? 'Obverse: ' : 'On yuz: ') . (string) $first['obverse'];
+            $out[] = ($isEn ? 'Obverse: ' : 'Ön yüz: ') . (string) $first['obverse'];
         }
 
         if (!empty($first['reverse'])) {
-            $out[] = ($isEn ? 'Reverse: ' : 'Arka yuz: ') . (string) $first['reverse'];
+            $out[] = ($isEn ? 'Reverse: ' : 'Arka yüz: ') . (string) $first['reverse'];
         }
 
         if (!empty($first['weight'])) {
-            $out[] = ($isEn ? 'Weight: ' : 'Agirlik: ') . (string) $first['weight'];
+            $out[] = ($isEn ? 'Weight: ' : 'Ağırlık: ') . (string) $first['weight'];
         }
 
         if (!empty($first['diameter'])) {
-            $out[] = ($isEn ? 'Diameter: ' : 'Cap: ') . (string) $first['diameter'];
+            $out[] = ($isEn ? 'Diameter: ' : 'Çap: ') . (string) $first['diameter'];
         }
 
         if (!empty($first['url'])) {
@@ -879,7 +879,7 @@ class AssistantController
 
         if ($rest) {
             $out[] = '';
-            $out[] = $isEn ? 'Other close matches:' : 'Diger yakin eslesmeler:';
+            $out[] = $isEn ? 'Other close matches:' : 'Diğer yakın eşleşmeler:';
 
             foreach ($rest as $i => $m) {
                 $t    = !empty($m['title']) ? (string) $m['title'] : ('#' . (int) ($m['article_id'] ?? 0));
@@ -896,7 +896,7 @@ class AssistantController
                     $bits[] = $d;
                 }
 
-                $tail  = $bits ? ' -- ' . implode(' - ', $bits) : '';
+                $tail  = $bits ? ' — ' . implode(' · ', $bits) : '';
                 $out[] = ($i + 2) . '. ' . $t . $conf($m['confidence'] ?? null) . $tail;
             }
         }
@@ -907,14 +907,14 @@ class AssistantController
         if ($topConf > 0 && $topConf < 0.6) {
             $out[] = '';
             $out[] = $isEn
-                ? 'Similarity is low, so treat this as a lead rather than an attribution -- adding the other side, or a sharper photo, usually helps.'
-                : 'Benzerlik dusuk; bunu kesin teshis degil bir ipucu olarak degerlendirin -- diger yuzu eklemek ya da daha net bir fotograf genellikle yardimci olur.';
+                ? 'Similarity is low, so treat this as a lead rather than an attribution — adding the other side, or a sharper photo, usually helps.'
+                : 'Benzerlik düşük; bunu kesin teşhis değil bir ipucu olarak değerlendirin — diğer yüzü eklemek ya da daha net bir fotoğraf genellikle yardımcı olur.';
         }
 
         $out[] = '';
         $out[] = $isEn
             ? 'Ask me about any of them (for example "tell me more about the second one") and I will go deeper.'
-            : 'Istediginiz eslesmeyi sorabilirsiniz (ornegin "ikincisini anlat"), daha ayrintili anlatayim.';
+            : 'İstediğiniz eşleşmeyi sorabilirsiniz (örneğin "ikincisini anlat"), daha ayrıntılı anlatayım.';
 
         return [
             'title'     => mb_substr($title, 0, 120),
