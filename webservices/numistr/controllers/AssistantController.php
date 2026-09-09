@@ -1125,6 +1125,15 @@ class AssistantController
             $res['text'] = self::msg($lang, 'llm_error');
         }
 
+        // Applies to every route: the model invents plausible category URLs when it
+        // wants somewhere to point, and they 404. Only tool-returned URLs and the
+        // verified landing pages survive. See dropUnknownSiteLinks().
+        $allowed = array_column((array) ($res['sources'] ?? []), 'url');
+        $res['text'] = self::dropUnknownSiteLinks(
+            (string) $res['text'],
+            array_merge($allowed, (array) (self::$config['landing_urls'][$lang] ?? []))
+        );
+
         return self::persistAndRespond($db, $convId, $identity, $lang, $res, $quota);
     }
 
@@ -1133,9 +1142,76 @@ class AssistantController
     // ======================================================================
 
     /**
-     * Public glossary page. Terminology chunks are attributed here, never to the
-     * private Google Doc they were ingested from.
+     * Remove links to our own site that nothing vouched for.
+     *
+     * Measured 2026-09-09: asked about a mint that does not exist, the assistant
+     * answered honestly and then offered /tr/yerlesimleri and /tr/sikkeler as places
+     * to look. Both are 404. So is /tr/antik-yerlesimleri, which it produced on the
+     * settlement route - the real alias is /tr/antik-yerlesimler, one letter apart.
+     * A confident answer ending in a dead link is worse than a vague one, and rule 4
+     * ("URLs only exactly as returned by tools") had already told it not to.
+     *
+     * The prompt is not where this gets enforced. Two prompt-level fixes failed on
+     * this same class of problem today (1.9.2, 0 of 5), so the check lives in code.
+     *
+     * Only numistr.org links are policed - those are the ones we can vouch for -
+     * and a markdown link keeps its text, so the sentence still reads.
      */
+    public static function dropUnknownSiteLinks(string $answer, array $allowedUrls): string
+    {
+        if ($answer === '') {
+            return $answer;
+        }
+
+        $allowed = [];
+
+        foreach ($allowedUrls as $u) {
+            $n = self::normaliseSiteUrl((string) $u);
+
+            if ($n !== '') {
+                $allowed[$n] = true;
+            }
+        }
+
+        $ours = '~https?://(?:www\.)?numistr\.org[^\s\)\]<>"]*~i';
+
+        // Markdown links first, so the label survives when the target does not.
+        $answer = preg_replace_callback(
+            '~\[([^\]]*)\]\((' . 'https?://(?:www\.)?numistr\.org[^\s\)]*' . ')\)~i',
+            static function (array $m) use ($allowed): string {
+                return isset($allowed[self::normaliseSiteUrl($m[2])]) ? $m[0] : $m[1];
+            },
+            $answer
+        ) ?? $answer;
+
+        // Then bare URLs.
+        $answer = preg_replace_callback(
+            $ours,
+            static function (array $m) use ($allowed): string {
+                return isset($allowed[self::normaliseSiteUrl($m[0])]) ? $m[0] : '';
+            },
+            $answer
+        ) ?? $answer;
+
+        // Tidy what removal left behind: dangling "(): " fragments and double spaces.
+        $answer = preg_replace('~\(\s*\)~u', '', $answer) ?? $answer;
+        $answer = preg_replace('~[ \t]{2,}~u', ' ', $answer) ?? $answer;
+        $answer = preg_replace('~[ \t]+([,.;:])~u', '$1', $answer) ?? $answer;
+
+        return trim($answer);
+    }
+
+    /** Compare our URLs without tripping over www, trailing slash or punctuation. */
+    public static function normaliseSiteUrl(string $url): string
+    {
+        $url = trim($url);
+        $url = rtrim($url, ".,;:!?)]\"'");
+        $url = preg_replace('~^https?://~i', '', $url) ?? $url;
+        $url = preg_replace('~^www\.~i', '', $url) ?? $url;
+
+        return rtrim(mb_strtolower($url, 'UTF-8'), '/');
+    }
+
     /**
      * Keep only the pre-fetched sources the answer actually talks about.
      *
@@ -1191,6 +1267,15 @@ class AssistantController
         return $kept;
     }
 
+    /**
+     * Public glossary page. Terminology chunks are attributed here, never to the
+     * private Google Doc they were ingested from.
+     *
+     * NOTE 2026-09-09: for lang=en this builds /en/numizmatik-karsiliklar, which is
+     * a 404 - the English glossary page does not exist (the site's own English menu
+     * links to the same dead alias). dropUnknownSiteLinks() keeps that URL out of
+     * answers; the page itself still needs fixing on the site.
+     */
     private static function glossaryUrl(string $lang): string
     {
         return (string) (self::$config['site_base'] ?? 'https://numistr.org')
@@ -1338,13 +1423,15 @@ class AssistantController
         //
         // The glossary page is exempt: search_kb attributes terminology to it as a
         // category, not as a claim, so the answer never names it.
-        if ($route === 'settlement') {
-            $sources = self::sourcesSupportedByAnswer(
-                $sources + $preSources,
-                (string) $r['text'],
-                [self::glossaryUrl($lang)]
-            );
-        }
+        // Applies to the coin route as well: asked about a mint that does not exist,
+        // search_coins finds nothing, the model correctly says so - and 3 to 4 coin
+        // pages were still listed underneath as if they backed it (measured
+        // 2026-09-09 on 'Zarkania darphanesinde basilan sikkeler').
+        $sources = self::sourcesSupportedByAnswer(
+            $sources + $preSources,
+            (string) $r['text'],
+            [self::glossaryUrl($lang)]
+        );
 
         return [
             'text'       => $r['text'],

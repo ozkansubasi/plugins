@@ -311,6 +311,35 @@ return [
         ],
     ],
 
+    // Landing pages the assistant may point at when it has nothing specific to
+    // link. Everything here was verified to return 200 on 2026-09-09; anything the
+    // model invents outside this list is stripped by dropUnknownSiteLinks().
+    //
+    // Do NOT add a URL without checking it. The model produced /tr/yerlesimleri,
+    // /tr/sikkeler and /tr/antik-yerlesimleri on its own - all 404, and the last one
+    // is a single letter away from the real alias.
+    //
+    // en has no glossary entry on purpose: /en/numizmatik-karsiliklar is a 404. The
+    // site's own English menu links to that dead alias too; until the page exists an
+    // English answer should cite nothing rather than a broken page.
+    'landing_urls' => [
+        'tr' => [
+            'https://numistr.org/tr',
+            'https://numistr.org/tr/numizmatik-karsiliklar',
+            'https://numistr.org/tr/antik-yerlesimler',
+            'https://numistr.org/tr/anatolian-coins',
+            'https://numistr.org/tr/blog',
+            'https://numistr.org/tr/abonelikler',
+        ],
+        'en' => [
+            'https://numistr.org/en',
+            'https://numistr.org/en/ancient-settlements',
+            'https://numistr.org/en/anatolian-coins',
+            'https://numistr.org/en/blog',
+            'https://numistr.org/en/plans',
+        ],
+    ],
+
     // Public site base (for URLs returned by tools)
     'site_base' => 'https://numistr.org',
     'register_url' => [
