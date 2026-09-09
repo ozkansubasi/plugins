@@ -1136,6 +1136,47 @@ class AssistantController
      * Public glossary page. Terminology chunks are attributed here, never to the
      * private Google Doc they were ingested from.
      */
+    /**
+     * Keep only the pre-fetched sources the answer actually talks about.
+     *
+     * Context handed to the model up front is not evidence for whatever it ends up
+     * saying. A "no record of this place" answer must not carry four settlement
+     * links that look like they support it - that is the citation half of the
+     * fabrication problem closed on 2026-09-06.
+     *
+     * A title counts only as a whole word, so "Zara" does not match inside
+     * "Zarkanopolis"; the URL counts because answers often paste it inline.
+     */
+    public static function sourcesSupportedByAnswer(array $sources, string $answer): array
+    {
+        if ($answer === '' || !$sources) {
+            return [];
+        }
+
+        $kept = [];
+
+        foreach ($sources as $url => $src) {
+            $title = (string) ($src['title'] ?? '');
+
+            if ($url !== '' && mb_strpos($answer, (string) $url) !== false) {
+                $kept[$url] = $src;
+                continue;
+            }
+
+            if ($title === '') {
+                continue;
+            }
+
+            $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($title, '/') . '(?![\p{L}\p{N}])/u';
+
+            if (preg_match($pattern, $answer) === 1) {
+                $kept[$url] = $src;
+            }
+        }
+
+        return $kept;
+    }
+
     private static function glossaryUrl(string $lang): string
     {
         return (string) (self::$config['site_base'] ?? 'https://numistr.org')
@@ -1188,7 +1229,8 @@ class AssistantController
         $system = $rules . "\n\n" . (string) (self::$config['prompts'][$lang]['tools_hint'] ?? '')
             . "\n" . ($lang === 'en' ? 'Today: ' : 'Bugun: ') . date('Y-m-d');
 
-        $sources = [];
+        $sources    = [];
+        $preSources = [];
 
         // The settlement route used to work by accident. search_kb returned settlement
         // chunks too, so a model that reached for the wrong tool still found something.
@@ -1223,7 +1265,8 @@ class AssistantController
                     $lines[] = '- ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
 
                     if (!empty($it['url']) && !empty($it['title'])) {
-                        $sources[$it['url']] = ['title' => (string) $it['title'], 'url' => (string) $it['url']];
+                        // Deliberately NOT $sources: see sourcesSupportedByAnswer().
+                        $preSources[$it['url']] = ['title' => (string) $it['title'], 'url' => (string) $it['url']];
                     }
                 }
 
@@ -1267,6 +1310,12 @@ class AssistantController
         if (!$r['ok']) {
             self::log('tools-llm', $r['error']);
         }
+
+        // Pre-fetched settlement articles are context, not automatically evidence.
+        // Asked about a place that does not exist ("Zarkanopolis nerede"), the model
+        // correctly answered that it found nothing - but the four nearest settlements
+        // were still attached as sources, reading as if they backed that answer.
+        $sources += self::sourcesSupportedByAnswer($preSources, (string) $r['text']);
 
         return [
             'text'       => $r['text'],
