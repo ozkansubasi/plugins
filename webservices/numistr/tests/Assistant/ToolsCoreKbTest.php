@@ -165,8 +165,15 @@ check('tool loop without key -> ok=false with error', $r['ok'] === false && $r['
 // ---- config sanity ----
 check('models configured', $cfg['models']['classify'] === 'gemini-3.7-flash' && $cfg['models']['tools'] === 'claude-haiku-4-5');
 check('every model has a cost row', isset($cfg['costs'][$cfg['models']['classify']], $cfg['costs'][$cfg['models']['site']], $cfg['costs'][$cfg['models']['tools']]));
-check('prompts forbid counts (TR)', stripos($cfg['prompts']['tr']['rules'], 'sayisi verme') !== false);
-check('prompts forbid counts (EN)', stripos($cfg['prompts']['en']['rules'], 'NEVER state total') !== false);
+// The rule narrowed on 2026-09-09 by the owner's decision: the assistant must not
+// COUNT the catalogue itself, but a figure already published in a site article may
+// be repeated. It came up because a settlement article says "Tarsus, NumisTR
+// veritabaninda 368 sikke varyanti ile kayitli" and the assistant quoted it
+// faithfully - the article was right, the blanket ban was too wide.
+check('prompts forbid SELF-DERIVED counts (TR)', stripos($cfg['prompts']['tr']['rules'], 'KENDIN toplam cikarma') !== false);
+check('prompts forbid SELF-DERIVED counts (EN)', stripos($cfg['prompts']['en']['rules'], 'derive totals yourself') !== false);
+check('prompts allow repeating a figure from an article (TR)', stripos($cfg['prompts']['tr']['rules'], 'AKTARABILIRSIN') !== false);
+check('prompts allow repeating a figure from an article (EN)', stripos($cfg['prompts']['en']['rules'], 'MAY repeat it') !== false);
 
 // ---- Faz 2b/7: giris + ucretsiz uyelik baglantilari ----
 check('auth_urls configured', isset($cfg['auth_urls']['login'], $cfg['auth_urls']['register']));
