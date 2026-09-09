@@ -71,3 +71,27 @@ check('landing urls are plain site pages', $bad === [], implode(',', $bad));
 // ---- degenerate ----
 check('empty answer untouched', $C::dropUnknownSiteLinks('', [$ok]) === '');
 check('no allowed urls strips all ours', mb_strpos($C::dropUnknownSiteLinks('Bak ' . $ok, []), 'http') === false);
+
+// ---- core KB links are vouched for and must survive (1.10.1) ----
+// 1.10.0 allowed only tool URLs + landing pages, which would have stripped the
+// site route's own curated links (about, faq, ancient map, region coin pages).
+$kbText = "- Hakkimizda: https://numistr.org/tr/hakkimizda
+"
+    . "- Harita: https://numistr.org/tr/antik-harita
+"
+    . "- Sikke detay: https://numistr.org/tr/anatolian-coins/{bolge}-coins/{id}-{baslik}
+";
+
+$found = $C::siteUrlsIn($kbText);
+check('core kb urls extracted', in_array('https://numistr.org/tr/hakkimizda', $found, true));
+check('url templates ignored', count(array_filter($found, static function ($u) { return mb_strpos($u, '{') !== false; })) === 0);
+
+$out = $C::dropUnknownSiteLinks('Detay: https://numistr.org/tr/antik-harita', $found);
+check('curated core kb link survives', mb_strpos($out, 'antik-harita') !== false);
+
+// ---- the real core KB file must not carry the dead English glossary alias ----
+$enKb = file_get_contents($root . '/assistant/core-kb.en.md');
+check(
+    'core-kb.en.md no longer links the dead english glossary',
+    mb_strpos((string) $enKb, 'en/numizmatik-karsiliklar') === false
+);

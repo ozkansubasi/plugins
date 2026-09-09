@@ -1128,11 +1128,17 @@ class AssistantController
         // Applies to every route: the model invents plausible category URLs when it
         // wants somewhere to point, and they 404. Only tool-returned URLs and the
         // verified landing pages survive. See dropUnknownSiteLinks().
-        $allowed = array_column((array) ($res['sources'] ?? []), 'url');
-        $res['text'] = self::dropUnknownSiteLinks(
-            (string) $res['text'],
-            array_merge($allowed, (array) (self::$config['landing_urls'][$lang] ?? []))
+        // The curated core KB is the site's own link list (about, faq, map, region
+        // coin pages...). Those are vouched for, so they belong in the allowed set:
+        // without them the site route would lose its own legitimate links. Checked
+        // 2026-09-09: 27 of the 28 URLs in that file return 200, the odd one out
+        // being the English glossary alias, which glossaryUrl() no longer emits.
+        $allowed = array_merge(
+            array_column((array) ($res['sources'] ?? []), 'url'),
+            (array) (self::$config['landing_urls'][$lang] ?? []),
+            self::siteUrlsIn($coreKb->build($lang)['text'] ?? '')
         );
+        $res['text'] = self::dropUnknownSiteLinks((string) $res['text'], $allowed);
 
         return self::persistAndRespond($db, $convId, $identity, $lang, $res, $quota);
     }
@@ -1199,6 +1205,28 @@ class AssistantController
         $answer = preg_replace('~[ \t]+([,.;:])~u', '$1', $answer) ?? $answer;
 
         return trim($answer);
+    }
+
+    /** Concrete numistr.org URLs written in a block of text (templates ignored). */
+    public static function siteUrlsIn(string $text): array
+    {
+        if ($text === '' || !preg_match_all('~https?://(?:www\.)?numistr\.org[^\s\)\]<>"]*~i', $text, $m)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($m[0] as $u) {
+            // core-kb documents URL SHAPES too ("/{region}-coins/{id}-{title}");
+            // those are not addresses and must not widen the allowed set.
+            if (mb_strpos($u, '{') !== false) {
+                continue;
+            }
+
+            $out[] = rtrim($u, '.,;:');
+        }
+
+        return array_values(array_unique($out));
     }
 
     /** Compare our URLs without tripping over www, trailing slash or punctuation. */
@@ -1271,15 +1299,21 @@ class AssistantController
      * Public glossary page. Terminology chunks are attributed here, never to the
      * private Google Doc they were ingested from.
      *
-     * NOTE 2026-09-09: for lang=en this builds /en/numizmatik-karsiliklar, which is
-     * a 404 - the English glossary page does not exist (the site's own English menu
-     * links to the same dead alias). dropUnknownSiteLinks() keeps that URL out of
-     * answers; the page itself still needs fixing on the site.
+     * Returns '' for English on purpose. /en/numizmatik-karsiliklar is a 404 -
+     * there is no English glossary page (the site's own English menu links to the
+     * same dead alias, so this predates the assistant). Every English terminology
+     * answer was citing it. Attributing a source to a page that does not exist is
+     * worse than not attributing one, so callers skip an empty URL; restore the
+     * entry here once the page is published.
      */
     private static function glossaryUrl(string $lang): string
     {
+        if ($lang !== 'tr') {
+            return '';
+        }
+
         return (string) (self::$config['site_base'] ?? 'https://numistr.org')
-            . '/' . $lang . '/numizmatik-karsiliklar';
+            . '/tr/numizmatik-karsiliklar';
     }
 
     private static function routeSite($llm, string $message, array $history, string $lang, string $rules, array $limits, NumisTRAssistantCoreKb $coreKb): array
@@ -1389,7 +1423,7 @@ class AssistantController
 
             // Terminology chunks carry no public url of their own (see searchKb),
             // so attribute them to the glossary page once.
-            if ($name === 'search_kb' && !empty($items)) {
+            if ($name === 'search_kb' && !empty($items) && self::glossaryUrl($lang) !== '') {
                 $gUrl = self::glossaryUrl($lang);
                 $sources[$gUrl] = [
                     'title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler',
@@ -1430,7 +1464,7 @@ class AssistantController
         $sources = self::sourcesSupportedByAnswer(
             $sources + $preSources,
             (string) $r['text'],
-            [self::glossaryUrl($lang)]
+            array_filter([self::glossaryUrl($lang)])
         );
 
         return [
@@ -1491,7 +1525,7 @@ class AssistantController
             $lines[] = '[' . $n . '] ' . $it['title'] . ' (' . $label . ")\n" . $it['text'];
         }
 
-        if (!empty($kbItems)) {
+        if (!empty($kbItems) && $glossaryUrl !== '') {
             $sources[] = ['title' => $glossaryTitle, 'url' => $glossaryUrl];
         }
 
