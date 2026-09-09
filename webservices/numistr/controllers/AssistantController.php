@@ -1190,6 +1190,50 @@ class AssistantController
 
         $sources = [];
 
+        // The settlement route used to work by accident. search_kb returned settlement
+        // chunks too, so a model that reached for the wrong tool still found something.
+        // Scoping search_kb to terminology (1.9.1) removed that accident and exposed the
+        // real behaviour: asked "Zara nerede", the model asks which region instead of
+        // searching - 0 of 5 attempts answered, and one of them volunteered "Zarai" from
+        // its own memory. Instructing it to search first did not move the number (1.9.2,
+        // still 0 of 5), so the content is fetched here rather than left to the model's
+        // discretion, the way routeExplain already does it.
+        //
+        // search_site, not search_settlements: the latter matches a NAME with LIKE, so it
+        // would need the place name pulled out of the sentence first, and getting that
+        // wrong fails silently. Semantic search takes the sentence as written - "Zara
+        // nerede" returns the Zara article at 0.609 - and carries the public URL with it.
+        if ($route === 'settlement') {
+            $pre = $tools->execute(
+                'search_site',
+                ['query' => $message, 'lang' => $lang, 'type' => 'settlements', 'limit' => 4],
+                $lang
+            );
+
+            if (isset($pre['error'])) {
+                self::log('settlement-presearch', (string) $pre['error']);
+            }
+
+            $preItems = (!isset($pre['error']) && !empty($pre['items'])) ? $pre['items'] : [];
+
+            if ($preItems) {
+                $lines = [];
+
+                foreach ($preItems as $it) {
+                    $lines[] = '- ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
+
+                    if (!empty($it['url']) && !empty($it['title'])) {
+                        $sources[$it['url']] = ['title' => (string) $it['title'], 'url' => (string) $it['url']];
+                    }
+                }
+
+                $system .= "\n\n" . ($lang === 'en'
+                    ? 'SETTLEMENT ARTICLES already retrieved for this question. Base the answer on these and cite their URLs. Do not ask the user to narrow the question down when one of these already answers it.'
+                    : 'Bu soru icin ONCEDEN getirilmis YERLESIM MAKALELERI. Yaniti bunlara dayandir ve URL adreslerini kaynak goster. Bunlardan biri soruyu zaten yanitliyorsa kullaniciya soruyu daraltmasini SOYLEME.')
+                    . "\n" . implode("\n\n", $lines);
+            }
+        }
+
         $executor = function (string $name, array $input) use ($tools, $lang, &$sources) {
             $result = $tools->execute($name, $input, $lang);
 
