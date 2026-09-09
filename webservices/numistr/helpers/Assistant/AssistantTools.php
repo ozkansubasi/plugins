@@ -284,9 +284,39 @@ class NumisTRAssistantTools
         return $r !== '' ? $r : null;
     }
 
+    /**
+     * Regions whose pages do not sit at /{lang}/anatolian-coins/{region_code}/.
+     *
+     * Both were producing a 404 for every coin in them; verified 2026-09-09 against
+     * live records (12093 Adana, 15060 Arsames):
+     *
+     *  - cilicia-coins: the Turkish menu alias is "clicia-coins" - a typo on the site
+     *    that was never corrected, while the API and the English menu both spell it
+     *    properly. 824 variants, so every Turkish answer about a Cilician or Tarsus
+     *    coin handed the reader a dead link.
+     *  - other-ancient-regions-coins: not under anatolian-coins at all, and the alias
+     *    differs per language. 46 variants, broken in BOTH languages.
+     *
+     * The link filter cannot catch this: these URLs come from tool results, which it
+     * trusts by construction. The shape has to be right at the source.
+     */
+    private const COIN_PATHS = [
+        'cilicia-coins' => [
+            'tr' => 'anatolian-coins/clicia-coins',
+            'en' => 'anatolian-coins/cilicia-coins',
+        ],
+        'other-ancient-regions-coins' => [
+            'tr' => 'other-ancient-place-coins',
+            'en' => 'other-ancient-regions',
+        ],
+    ];
+
     public static function coinUrl(string $base, string $lang, string $regionCode, int $id, string $alias): string
     {
-        return rtrim($base, '/') . '/' . $lang . '/anatolian-coins/' . rawurlencode($regionCode) . '/' . $id . '-' . rawurlencode($alias);
+        $lang = $lang === 'en' ? 'en' : 'tr';
+        $path = self::COIN_PATHS[$regionCode][$lang] ?? 'anatolian-coins/' . rawurlencode($regionCode);
+
+        return rtrim($base, '/') . '/' . $lang . '/' . $path . '/' . $id . '-' . rawurlencode($alias);
     }
 
     public static function settlementUrl(string $base, string $lang, string $menuAlias, int $id, string $alias): string
@@ -355,6 +385,22 @@ class NumisTRAssistantTools
         . 'where when tell me about explain definition define term terms coin coins coinage on in '
         . 'for and or to with from used call called known refers refer type types example examples';
 
+    /**
+     * Extra stop words for the SITE corpus only.
+     *
+     * Deliberately NOT merged into GATE_STOPWORDS. "stater", "kral", "krallik" are
+     * generic topic words in an article search, but in the terminology KB "stater"
+     * IS the term being asked about - putting them in the shared list would blind
+     * the terminology gate to its own subject matter.
+     */
+    private const SITE_STOPWORDS = 'antik kenti kentin kentte kent yerlesim yerlesimi yerlesimin '
+        . 'kalinti kalintilari kalintilar darphane darphanesi tasvir tasviri tasvirleri '
+        . 'sembol sembolu sembolleri birligi hanedan hanedani stater krallik kral kralin '
+        . 'onemi merkezi merkez bolge bolgesi bolgesinde ortaya cikisi cikis yansitilmis '
+        . 'gorulur anlatilir tarihce tarihcesi kultu kultur ticaret ekonomi '
+        . 'ancient city site ruins ruin mint depiction symbol dynasty kingdom king '
+        . 'importance region centre center emergence culture trade economy history';
+
     /** Case- and diacritic-folded form used for all gate comparisons. */
     public static function normaliseForMatch(?string $s): string
     {
@@ -376,21 +422,31 @@ class NumisTRAssistantTools
      * Turkish is agglutinative, so a question says "sikkesi" where the chunk says
      * "sikke". Comparing on a short prefix absorbs the suffix without needing a
      * stemmer; five characters keeps "drahmi"/"drahmisi" together while still
-     * telling "zarkanion" apart from every real word in the corpus.
+     * telling "zarkanion" apart from every real word in the terminology corpus.
+     *
+     * The site corpus needs SEVEN. It is full of ancient place names and invented
+     * ones look just like them: measured 2026-09-09, "Xanthoderos" collided with
+     * the real city "Xanthos" on the five-letter prefix "xanth" and carried an
+     * invented king through the gate. Seven closed it without losing a single real
+     * query - Turkish suffixes attach after the root, so a longer prefix still
+     * absorbs inflection.
      */
-    public static function matchStem(string $token): string
+    public static function matchStem(string $token, int $length = 5): string
     {
-        return mb_strlen($token, 'UTF-8') > 5 ? mb_substr($token, 0, 5, 'UTF-8') : $token;
+        return mb_strlen($token, 'UTF-8') > $length ? mb_substr($token, 0, $length, 'UTF-8') : $token;
     }
 
     /** Content words of a query: what the reader is actually asking about. */
-    public static function queryTerms(?string $query): array
+    public static function queryTerms(?string $query, string $corpus = 'kb'): array
     {
-        static $stop = null;
+        static $stop = [];
 
-        if ($stop === null) {
-            $stop = array_flip(preg_split('/\s+/', self::GATE_STOPWORDS) ?: []);
+        if (!isset($stop[$corpus])) {
+            $words = self::GATE_STOPWORDS . ($corpus === 'site' ? ' ' . self::SITE_STOPWORDS : '');
+            $stop[$corpus] = array_flip(preg_split('/\s+/', $words) ?: []);
         }
+
+        $words = $stop[$corpus];
 
         $parts = preg_split('/[^\p{L}\p{N}]+/u', self::normaliseForMatch($query)) ?: [];
         $out   = [];
@@ -403,7 +459,7 @@ class NumisTRAssistantTools
             // The stem is checked too, so "sikkesi" is dropped along with "sikke".
             // Without that, "zarkanion sikkesi nedir" would match every coin chunk
             // and carry the invented term through the gate (measured, 2026-09-08).
-            if (isset($stop[$p]) || isset($stop[self::matchStem($p)])) {
+            if (isset($words[$p]) || isset($words[self::matchStem($p)])) {
                 continue;
             }
 
@@ -414,7 +470,7 @@ class NumisTRAssistantTools
     }
 
     /** True when this chunk mentions at least one of the query's content words. */
-    public static function chunkMentionsTerms(array $terms, string $haystack): bool
+    public static function chunkMentionsTerms(array $terms, string $haystack, int $stemLength = 5): bool
     {
         if (!$terms) {
             return true;   // nothing to judge on - fall back to the score alone
@@ -423,7 +479,7 @@ class NumisTRAssistantTools
         $hay = self::normaliseForMatch($haystack);
 
         foreach ($terms as $t) {
-            if (mb_strpos($hay, self::matchStem($t), 0, 'UTF-8') !== false) {
+            if (mb_strpos($hay, self::matchStem($t, $stemLength), 0, 'UTF-8') !== false) {
                 return true;
             }
         }
@@ -450,7 +506,7 @@ class NumisTRAssistantTools
      * generic ("kac", "eder") and requiring them refused genuine questions;
      * requiring every word cost real recall for no gain in safety (measured).
      */
-    public static function kbCanAnswer(array $terms, array $chunks): bool
+    public static function kbCanAnswer(array $terms, array $chunks, int $stemLength = 5): bool
     {
         $long = [];
 
@@ -473,7 +529,7 @@ class NumisTRAssistantTools
         $hay = self::normaliseForMatch($hay);
 
         foreach ($long as $t) {
-            if (mb_strpos($hay, self::matchStem($t), 0, 'UTF-8') === false) {
+            if (mb_strpos($hay, self::matchStem($t, $stemLength), 0, 'UTF-8') === false) {
                 return false;
             }
         }
@@ -1054,6 +1110,7 @@ class NumisTRAssistantTools
         $items = [];
 
         $corrupt = 0;
+        $scored  = [];
 
         foreach ((array) ($data['results'] ?? []) as $r) {
             if (!is_array($r) || (float) ($r['score'] ?? 0) < $min) {
@@ -1067,7 +1124,7 @@ class NumisTRAssistantTools
                 continue;
             }
 
-            $items[] = [
+            $scored[] = [
                 'title' => (string) ($r['title'] ?? ''),
                 'url'   => (string) ($r['url'] ?? ''),
                 'type'  => (string) ($r['type'] ?? ''),
@@ -1077,7 +1134,41 @@ class NumisTRAssistantTools
             ];
         }
 
+        // ---- the word gate, same idea as searchKb, different constants -------
+        // Measured 2026-09-09: this store had NO protection at all. Every one of ten
+        // invented subjects came back with five excerpts carrying real article titles
+        // and real public URLs - exactly the material for the failure closed on
+        // 2026-09-06, where an invented term was answered with genuine site links.
+        //
+        // A score threshold cannot separate them here either, and the overlap is worse
+        // than in the terminology store: invented queries top out at 0.600 while real
+        // ones start at 0.481, so a fifth of genuine questions sit below the invented
+        // ceiling. "Pergonaut antik kenti kalintilari" scores 0.600 and returns Perge.
+        //
+        // Seven-character stems, not five: see matchStem(). Site-specific stop words:
+        // see SITE_STOPWORDS.
+        $terms = self::queryTerms($query, 'site');
+        $items = [];
+        $gated = 0;
+
+        if (self::kbCanAnswer($terms, $scored, 7)) {
+            foreach ($scored as $c) {
+                if (!self::chunkMentionsTerms($terms, $c['title'] . ' ' . $c['text'], 7)) {
+                    $gated++;
+                    continue;
+                }
+
+                $items[] = $c;
+            }
+        } else {
+            $gated = count($scored);
+        }
+
         $out = ['items' => $items, 'has_more' => false];
+
+        if ($gated > 0) {
+            $out['gate_dropped'] = $gated;
+        }
 
         if ($corrupt > 0) {
             $out['corrupt_dropped'] = $corrupt;
