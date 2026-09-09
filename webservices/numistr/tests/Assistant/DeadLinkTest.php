@@ -63,10 +63,29 @@ check(
     !in_array('https://numistr.org/en/numizmatik-karsiliklar', $landing['en'] ?? [], true)
 );
 $all = array_merge($landing['tr'] ?? [], $landing['en'] ?? []);
+
+// Landing pages may be one or two segments deep - "/tr/blog" and
+// "/tr/anatolian-coins/pisidia-coins" are both legitimate places to send someone.
+// What must never appear is a CONTENT DETAIL page: those come from tool results,
+// carry an id prefix ("12549-tarsus-..."), and allowing one here would let a stale
+// hand-written link outlive the record it points at.
 $bad = array_filter($all, static function ($u) {
-    return !preg_match('~^https://numistr\.org/(tr|en)(/[a-z0-9-]+)?$~', $u);
+    return !preg_match('~^https://numistr\.org/(tr|en)(/[a-z0-9-]+){0,2}$~', $u);
 });
-check('landing urls are plain site pages', $bad === [], implode(',', $bad));
+check('landing urls are site pages, not deep links', $bad === [], implode(',', $bad));
+
+$detail = array_filter($all, static function ($u) {
+    return (bool) preg_match('~/\d+-~', $u);
+});
+check('no content detail page in the landing list', $detail === [], implode(',', $detail));
+
+// The Cilicia trap: the Turkish alias is the misspelled one. Listing the correctly
+// spelled URL would re-admit a 404 the model already produces on its own.
+check(
+    'TR cilicia listed under the site typo alias only',
+    in_array('https://numistr.org/tr/anatolian-coins/clicia-coins', $landing['tr'] ?? [], true)
+        && !in_array('https://numistr.org/tr/anatolian-coins/cilicia-coins', $landing['tr'] ?? [], true)
+);
 
 // ---- degenerate ----
 check('empty answer untouched', $C::dropUnknownSiteLinks('', [$ok]) === '');
