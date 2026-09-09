@@ -1378,10 +1378,20 @@ class AssistantController
         // would need the place name pulled out of the sentence first, and getting that
         // wrong fails silently. Semantic search takes the sentence as written - "Zara
         // nerede" returns the Zara article at 0.609 - and carries the public URL with it.
-        if ($route === 'settlement') {
+        // Extended to the coin route on 2026-09-09 for the same reason. Asked
+        // "Tarsus darphanesinde basilan sikkeler", the model wrote a confident essay
+        // about Pharnabazos, Datames and Alexander's mint - from its own memory, with
+        // no source behind a word of it. Meanwhile the site carries "Kilikya Gecidi,
+        // Tarsus Darphanesi'nin Stratejik Onemi" and "Pers Satraplarinin Guc Gosterisi:
+        // Tarsus Stateri", which cover exactly that ground and were never fetched.
+        // search_coins answers "which coins", not "tell me about them"; the narrative
+        // lives in the articles, so the articles have to be in front of the model.
+        $preType = $route === 'settlement' ? 'settlements' : null;
+
+        if (in_array($route, ['settlement', 'coin_search'], true)) {
             $pre = $tools->execute(
                 'search_site',
-                ['query' => $message, 'lang' => $lang, 'type' => 'settlements', 'limit' => 4],
+                ['query' => $message, 'lang' => $lang, 'type' => $preType, 'limit' => 4],
                 $lang
             );
 
@@ -1404,8 +1414,14 @@ class AssistantController
                 }
 
                 $system .= "\n\n" . ($lang === 'en'
-                    ? 'SETTLEMENT ARTICLES already retrieved for this question. Base the answer on these and cite their URLs. Do not ask the user to narrow the question down when one of these already answers it.'
-                    : 'Bu soru icin ONCEDEN getirilmis YERLESIM MAKALELERI. Yaniti bunlara dayandir ve URL adreslerini kaynak goster. Bunlardan biri soruyu zaten yanitliyorsa kullaniciya soruyu daraltmasini SOYLEME.')
+                    ? 'SITE ARTICLES already retrieved for this question. Base any historical or '
+                        . 'descriptive claim on these and cite their URLs. Do not write background from '
+                        . 'your own knowledge, and do not ask the user to narrow the question down when '
+                        . 'one of these already answers it.'
+                    : 'Bu soru icin ONCEDEN getirilmis SITE MAKALELERI. Tarihsel ya da betimleyici her '
+                        . 'iddiani bunlara dayandir ve URL adreslerini kaynak goster. Kendi bilginden '
+                        . 'arka plan YAZMA; bunlardan biri soruyu zaten yanitliyorsa kullaniciya soruyu '
+                        . 'daraltmasini SOYLEME.')
                     . "\n" . implode("\n\n", $lines);
             }
         }
