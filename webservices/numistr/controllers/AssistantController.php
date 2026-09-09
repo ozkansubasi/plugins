@@ -1146,16 +1146,30 @@ class AssistantController
      *
      * A title counts only as a whole word, so "Zara" does not match inside
      * "Zarkanopolis"; the URL counts because answers often paste it inline.
+     *
+     * $exemptUrls survive unconditionally. The glossary page is the case: search_kb
+     * attributes terminology to it as a category rather than as a claim, so a correct
+     * answer never names it and a mention test would always throw it away.
      */
-    public static function sourcesSupportedByAnswer(array $sources, string $answer): array
+    public static function sourcesSupportedByAnswer(array $sources, string $answer, array $exemptUrls = []): array
     {
-        if ($answer === '' || !$sources) {
+        if (!$sources) {
             return [];
         }
 
-        $kept = [];
+        $exempt = array_flip($exemptUrls);
+        $kept   = [];
 
         foreach ($sources as $url => $src) {
+            if (isset($exempt[$url])) {
+                $kept[$url] = $src;
+                continue;
+            }
+
+            if ($answer === '') {
+                continue;
+            }
+
             $title = (string) ($src['title'] ?? '');
 
             if ($url !== '' && mb_strpos($answer, (string) $url) !== false) {
@@ -1311,11 +1325,26 @@ class AssistantController
             self::log('tools-llm', $r['error']);
         }
 
-        // Pre-fetched settlement articles are context, not automatically evidence.
+        // Retrieved settlement articles are context, not automatically evidence.
         // Asked about a place that does not exist ("Zarkanopolis nerede"), the model
-        // correctly answered that it found nothing - but the four nearest settlements
+        // correctly answered that it found nothing - but the nearest real settlements
         // were still attached as sources, reading as if they backed that answer.
-        $sources += self::sourcesSupportedByAnswer($preSources, (string) $r['text']);
+        //
+        // 1.9.4 filtered only the pre-fetched ones and did NOT fix it: the model also
+        // calls a search tool (the prompt tells it to), search_settlements finds no
+        // such name, search_site returns the nearest places instead, and those were
+        // registered as sources through the executor. A tool call is not evidence
+        // either - what decides is whether the answer actually talks about the place.
+        //
+        // The glossary page is exempt: search_kb attributes terminology to it as a
+        // category, not as a claim, so the answer never names it.
+        if ($route === 'settlement') {
+            $sources = self::sourcesSupportedByAnswer(
+                $sources + $preSources,
+                (string) $r['text'],
+                [self::glossaryUrl($lang)]
+            );
+        }
 
         return [
             'text'       => $r['text'],

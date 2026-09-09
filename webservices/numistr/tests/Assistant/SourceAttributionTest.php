@@ -61,3 +61,30 @@ check('match when the word stands alone', $C::sourcesSupportedByAnswer($pre2, 'K
 // ---- degenerate inputs ----
 check('empty answer keeps nothing', $C::sourcesSupportedByAnswer($pre, '') === []);
 check('empty source list stays empty', $C::sourcesSupportedByAnswer([], 'herhangi bir cevap') === []);
+
+// ---- tool-registered sources are not evidence either (1.9.5) ----
+// The model calls a search tool because the prompt tells it to; for a place that
+// does not exist the tool returns the NEAREST real settlements, and those were
+// being cited. Same rule applies to them.
+$answer = 'Maalesef NumisTR veritabaninda Zarkanopolis hakkinda kayit bulunamadi.';
+check(
+    'tool results about other places are dropped too',
+    $C::sourcesSupportedByAnswer($pre, $answer) === []
+);
+
+// ---- glossary exemption ----
+$glossary = 'https://numistr.org/tr/numizmatik-karsiliklar';
+$withGlossary = $pre + [$glossary => ['title' => 'Numizmatik terimler', 'url' => $glossary]];
+
+check(
+    'glossary survives although the answer never names it',
+    array_keys($C::sourcesSupportedByAnswer($withGlossary, $answer, [$glossary])) === [$glossary]
+);
+check(
+    'without the exemption the glossary would be dropped',
+    $C::sourcesSupportedByAnswer($withGlossary, $answer) === []
+);
+check(
+    'exemption does not rescue unrelated sources',
+    array_keys($C::sourcesSupportedByAnswer($withGlossary, $answer, [$glossary])) === [$glossary]
+);
