@@ -1125,6 +1125,21 @@ class AssistantController
             $res['text'] = self::msg($lang, 'llm_error');
         }
 
+        // Applies to every route: the model invents plausible category URLs when it
+        // wants somewhere to point, and they 404. Only tool-returned URLs and the
+        // verified landing pages survive. See dropUnknownSiteLinks().
+        // The curated core KB is the site's own link list (about, faq, map, region
+        // coin pages...). Those are vouched for, so they belong in the allowed set:
+        // without them the site route would lose its own legitimate links. Checked
+        // 2026-09-09: 27 of the 28 URLs in that file return 200, the odd one out
+        // being the English glossary alias, which glossaryUrl() no longer emits.
+        $allowed = array_merge(
+            array_column((array) ($res['sources'] ?? []), 'url'),
+            (array) (self::$config['landing_urls'][$lang] ?? []),
+            self::siteUrlsIn($coreKb->build($lang)['text'] ?? '')
+        );
+        $res['text'] = self::dropUnknownSiteLinks((string) $res['text'], $allowed);
+
         return self::persistAndRespond($db, $convId, $identity, $lang, $res, $quota);
     }
 
@@ -1133,13 +1148,172 @@ class AssistantController
     // ======================================================================
 
     /**
+     * Remove links to our own site that nothing vouched for.
+     *
+     * Measured 2026-09-09: asked about a mint that does not exist, the assistant
+     * answered honestly and then offered /tr/yerlesimleri and /tr/sikkeler as places
+     * to look. Both are 404. So is /tr/antik-yerlesimleri, which it produced on the
+     * settlement route - the real alias is /tr/antik-yerlesimler, one letter apart.
+     * A confident answer ending in a dead link is worse than a vague one, and rule 4
+     * ("URLs only exactly as returned by tools") had already told it not to.
+     *
+     * The prompt is not where this gets enforced. Two prompt-level fixes failed on
+     * this same class of problem today (1.9.2, 0 of 5), so the check lives in code.
+     *
+     * Only numistr.org links are policed - those are the ones we can vouch for -
+     * and a markdown link keeps its text, so the sentence still reads.
+     */
+    public static function dropUnknownSiteLinks(string $answer, array $allowedUrls): string
+    {
+        if ($answer === '') {
+            return $answer;
+        }
+
+        $allowed = [];
+
+        foreach ($allowedUrls as $u) {
+            $n = self::normaliseSiteUrl((string) $u);
+
+            if ($n !== '') {
+                $allowed[$n] = true;
+            }
+        }
+
+        $ours = '~https?://(?:www\.)?numistr\.org[^\s\)\]<>"]*~i';
+
+        // Markdown links first, so the label survives when the target does not.
+        $answer = preg_replace_callback(
+            '~\[([^\]]*)\]\((' . 'https?://(?:www\.)?numistr\.org[^\s\)]*' . ')\)~i',
+            static function (array $m) use ($allowed): string {
+                return isset($allowed[self::normaliseSiteUrl($m[2])]) ? $m[0] : $m[1];
+            },
+            $answer
+        ) ?? $answer;
+
+        // Then bare URLs.
+        $answer = preg_replace_callback(
+            $ours,
+            static function (array $m) use ($allowed): string {
+                return isset($allowed[self::normaliseSiteUrl($m[0])]) ? $m[0] : '';
+            },
+            $answer
+        ) ?? $answer;
+
+        // Tidy what removal left behind: dangling "(): " fragments and double spaces.
+        $answer = preg_replace('~\(\s*\)~u', '', $answer) ?? $answer;
+        $answer = preg_replace('~[ \t]{2,}~u', ' ', $answer) ?? $answer;
+        $answer = preg_replace('~[ \t]+([,.;:])~u', '$1', $answer) ?? $answer;
+
+        return trim($answer);
+    }
+
+    /** Concrete numistr.org URLs written in a block of text (templates ignored). */
+    public static function siteUrlsIn(string $text): array
+    {
+        if ($text === '' || !preg_match_all('~https?://(?:www\.)?numistr\.org[^\s\)\]<>"]*~i', $text, $m)) {
+            return [];
+        }
+
+        $out = [];
+
+        foreach ($m[0] as $u) {
+            // core-kb documents URL SHAPES too ("/{region}-coins/{id}-{title}");
+            // those are not addresses and must not widen the allowed set.
+            if (mb_strpos($u, '{') !== false) {
+                continue;
+            }
+
+            $out[] = rtrim($u, '.,;:');
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /** Compare our URLs without tripping over www, trailing slash or punctuation. */
+    public static function normaliseSiteUrl(string $url): string
+    {
+        $url = trim($url);
+        $url = rtrim($url, ".,;:!?)]\"'");
+        $url = preg_replace('~^https?://~i', '', $url) ?? $url;
+        $url = preg_replace('~^www\.~i', '', $url) ?? $url;
+
+        return rtrim(mb_strtolower($url, 'UTF-8'), '/');
+    }
+
+    /**
+     * Keep only the pre-fetched sources the answer actually talks about.
+     *
+     * Context handed to the model up front is not evidence for whatever it ends up
+     * saying. A "no record of this place" answer must not carry four settlement
+     * links that look like they support it - that is the citation half of the
+     * fabrication problem closed on 2026-09-06.
+     *
+     * A title counts only as a whole word, so "Zara" does not match inside
+     * "Zarkanopolis"; the URL counts because answers often paste it inline.
+     *
+     * $exemptUrls survive unconditionally. The glossary page is the case: search_kb
+     * attributes terminology to it as a category rather than as a claim, so a correct
+     * answer never names it and a mention test would always throw it away.
+     */
+    public static function sourcesSupportedByAnswer(array $sources, string $answer, array $exemptUrls = []): array
+    {
+        if (!$sources) {
+            return [];
+        }
+
+        $exempt = array_flip($exemptUrls);
+        $kept   = [];
+
+        foreach ($sources as $url => $src) {
+            if (isset($exempt[$url])) {
+                $kept[$url] = $src;
+                continue;
+            }
+
+            if ($answer === '') {
+                continue;
+            }
+
+            $title = (string) ($src['title'] ?? '');
+
+            if ($url !== '' && mb_strpos($answer, (string) $url) !== false) {
+                $kept[$url] = $src;
+                continue;
+            }
+
+            if ($title === '') {
+                continue;
+            }
+
+            $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($title, '/') . '(?![\p{L}\p{N}])/u';
+
+            if (preg_match($pattern, $answer) === 1) {
+                $kept[$url] = $src;
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
      * Public glossary page. Terminology chunks are attributed here, never to the
      * private Google Doc they were ingested from.
+     *
+     * Returns '' for English on purpose. /en/numizmatik-karsiliklar is a 404 -
+     * there is no English glossary page (the site's own English menu links to the
+     * same dead alias, so this predates the assistant). Every English terminology
+     * answer was citing it. Attributing a source to a page that does not exist is
+     * worse than not attributing one, so callers skip an empty URL; restore the
+     * entry here once the page is published.
      */
     private static function glossaryUrl(string $lang): string
     {
+        if ($lang !== 'tr') {
+            return '';
+        }
+
         return (string) (self::$config['site_base'] ?? 'https://numistr.org')
-            . '/' . $lang . '/numizmatik-karsiliklar';
+            . '/tr/numizmatik-karsiliklar';
     }
 
     private static function routeSite($llm, string $message, array $history, string $lang, string $rules, array $limits, NumisTRAssistantCoreKb $coreKb): array
@@ -1188,7 +1362,69 @@ class AssistantController
         $system = $rules . "\n\n" . (string) (self::$config['prompts'][$lang]['tools_hint'] ?? '')
             . "\n" . ($lang === 'en' ? 'Today: ' : 'Bugun: ') . date('Y-m-d');
 
-        $sources = [];
+        $sources    = [];
+        $preSources = [];
+
+        // The settlement route used to work by accident. search_kb returned settlement
+        // chunks too, so a model that reached for the wrong tool still found something.
+        // Scoping search_kb to terminology (1.9.1) removed that accident and exposed the
+        // real behaviour: asked "Zara nerede", the model asks which region instead of
+        // searching - 0 of 5 attempts answered, and one of them volunteered "Zarai" from
+        // its own memory. Instructing it to search first did not move the number (1.9.2,
+        // still 0 of 5), so the content is fetched here rather than left to the model's
+        // discretion, the way routeExplain already does it.
+        //
+        // search_site, not search_settlements: the latter matches a NAME with LIKE, so it
+        // would need the place name pulled out of the sentence first, and getting that
+        // wrong fails silently. Semantic search takes the sentence as written - "Zara
+        // nerede" returns the Zara article at 0.609 - and carries the public URL with it.
+        // Extended to the coin route on 2026-09-09 for the same reason. Asked
+        // "Tarsus darphanesinde basilan sikkeler", the model wrote a confident essay
+        // about Pharnabazos, Datames and Alexander's mint - from its own memory, with
+        // no source behind a word of it. Meanwhile the site carries "Kilikya Gecidi,
+        // Tarsus Darphanesi'nin Stratejik Onemi" and "Pers Satraplarinin Guc Gosterisi:
+        // Tarsus Stateri", which cover exactly that ground and were never fetched.
+        // search_coins answers "which coins", not "tell me about them"; the narrative
+        // lives in the articles, so the articles have to be in front of the model.
+        $preType = $route === 'settlement' ? 'settlements' : null;
+
+        if (in_array($route, ['settlement', 'coin_search'], true)) {
+            $pre = $tools->execute(
+                'search_site',
+                ['query' => $message, 'lang' => $lang, 'type' => $preType, 'limit' => 4],
+                $lang
+            );
+
+            if (isset($pre['error'])) {
+                self::log('settlement-presearch', (string) $pre['error']);
+            }
+
+            $preItems = (!isset($pre['error']) && !empty($pre['items'])) ? $pre['items'] : [];
+
+            if ($preItems) {
+                $lines = [];
+
+                foreach ($preItems as $it) {
+                    $lines[] = '- ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
+
+                    if (!empty($it['url']) && !empty($it['title'])) {
+                        // Deliberately NOT $sources: see sourcesSupportedByAnswer().
+                        $preSources[$it['url']] = ['title' => (string) $it['title'], 'url' => (string) $it['url']];
+                    }
+                }
+
+                $system .= "\n\n" . ($lang === 'en'
+                    ? 'SITE ARTICLES already retrieved for this question. Base any historical or '
+                        . 'descriptive claim on these and cite their URLs. Do not write background from '
+                        . 'your own knowledge, and do not ask the user to narrow the question down when '
+                        . 'one of these already answers it.'
+                    : 'Bu soru icin ONCEDEN getirilmis SITE MAKALELERI. Tarihsel ya da betimleyici her '
+                        . 'iddiani bunlara dayandir ve URL adreslerini kaynak goster. Kendi bilginden '
+                        . 'arka plan YAZMA; bunlardan biri soruyu zaten yanitliyorsa kullaniciya soruyu '
+                        . 'daraltmasini SOYLEME.')
+                    . "\n" . implode("\n\n", $lines);
+            }
+        }
 
         $executor = function (string $name, array $input) use ($tools, $lang, &$sources) {
             $result = $tools->execute($name, $input, $lang);
@@ -1203,7 +1439,7 @@ class AssistantController
 
             // Terminology chunks carry no public url of their own (see searchKb),
             // so attribute them to the glossary page once.
-            if ($name === 'search_kb' && !empty($items)) {
+            if ($name === 'search_kb' && !empty($items) && self::glossaryUrl($lang) !== '') {
                 $gUrl = self::glossaryUrl($lang);
                 $sources[$gUrl] = [
                     'title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler',
@@ -1223,6 +1459,29 @@ class AssistantController
         if (!$r['ok']) {
             self::log('tools-llm', $r['error']);
         }
+
+        // Retrieved settlement articles are context, not automatically evidence.
+        // Asked about a place that does not exist ("Zarkanopolis nerede"), the model
+        // correctly answered that it found nothing - but the nearest real settlements
+        // were still attached as sources, reading as if they backed that answer.
+        //
+        // 1.9.4 filtered only the pre-fetched ones and did NOT fix it: the model also
+        // calls a search tool (the prompt tells it to), search_settlements finds no
+        // such name, search_site returns the nearest places instead, and those were
+        // registered as sources through the executor. A tool call is not evidence
+        // either - what decides is whether the answer actually talks about the place.
+        //
+        // The glossary page is exempt: search_kb attributes terminology to it as a
+        // category, not as a claim, so the answer never names it.
+        // Applies to the coin route as well: asked about a mint that does not exist,
+        // search_coins finds nothing, the model correctly says so - and 3 to 4 coin
+        // pages were still listed underneath as if they backed it (measured
+        // 2026-09-09 on 'Zarkania darphanesinde basilan sikkeler').
+        $sources = self::sourcesSupportedByAnswer(
+            $sources + $preSources,
+            (string) $r['text'],
+            array_filter([self::glossaryUrl($lang)])
+        );
 
         return [
             'text'       => $r['text'],
@@ -1282,7 +1541,7 @@ class AssistantController
             $lines[] = '[' . $n . '] ' . $it['title'] . ' (' . $label . ")\n" . $it['text'];
         }
 
-        if (!empty($kbItems)) {
+        if (!empty($kbItems) && $glossaryUrl !== '') {
             $sources[] = ['title' => $glossaryTitle, 'url' => $glossaryUrl];
         }
 

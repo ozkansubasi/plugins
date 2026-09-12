@@ -10,6 +10,8 @@ NumisTR (numistr.org), Anadolu'nun antik sikkelerini ve antik yerleşimlerini be
 - Sikke bölgeleri (liste): https://numistr.org/tr/anatolian-coins — her bölge alt sayfası: https://numistr.org/tr/anatolian-coins/{bolge}-coins (örn. https://numistr.org/tr/anatolian-coins/caria-coins)
 - Sikke detay sayfası: https://numistr.org/tr/anatolian-coins/{bolge}-coins/{id}-{baslik} (asistan bu adresleri yalnızca araç sonucundan verir)
 - Antik yerleşimler: https://numistr.org/tr/antik-yerlesimler — bölge alt kategorileri "…-yerlesimleri" (örn. karya-yerlesimleri); yerleşim makalesi: https://numistr.org/tr/{bolge}-yerlesimleri/{id}-{ad}
+  - DİKKAT: Türkçe adreslerde bölge adı TÜRKÇE yazılır, İngilizce bölge kodu DEĞİL: karya, lidya, **ionya** (iyonya değil), kilikya (cilicia değil), likya, kapadokya, pontus, diger-antik-bolgeler. Alt kategoriler ana menünün ALTINDA değil, kökte durur (/tr/karya-yerlesimleri, /tr/antik-yerlesimler/karya-yerlesimleri DEĞİL).
+  - Bu adresleri kendin kurma. Yalnızca araç sonucundan gelen bağlantıyı ver; uydurulan kategori adresleri 404 veriyor.
 - Antik harita (etkileşimli): https://numistr.org/tr/antik-harita
 - Numizmatik terimler / karşılıklar: https://numistr.org/tr/numizmatik-karsiliklar
 - Blog: https://numistr.org/tr/blog — kategoriler: Sikke Hikayeleri, Anadolu Atlası, Tarihsel Anlatılar

@@ -11,7 +11,7 @@ Key principle: the assistant never states total record counts ("there are X coin
 - Coin detail page: https://numistr.org/en/anatolian-coins/{region}-coins/{id}-{title} (the assistant gives these only from tool results)
 - Ancient settlements: https://numistr.org/en/ancient-settlements — region sub-categories "…-settlements" (e.g. caria-settlements); settlement article: https://numistr.org/en/{region}-settlements/{id}-{name}
 - Interactive ancient map: https://numistr.org/en/ancient-map
-- Numismatic terms: https://numistr.org/en/numizmatik-karsiliklar
+- Numismatic terms: the glossary has no English page yet (the /en alias 404s), so do not offer a link for it in English.
 - Blog: https://numistr.org/en/blog
 - Plans / Pro: https://numistr.org/en/plans
 - About us: https://numistr.org/en/about-us ; Mission & vision: https://numistr.org/en/our-mission-and-vision
