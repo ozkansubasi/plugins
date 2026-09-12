@@ -534,11 +534,22 @@ class PlgWebservicesNumistr extends CMSPlugin
         
         try {
             $isPro = $this->authHelper->hasProSubscription($user);
-            
+
+            // Kaynak + bitiş tarihi. Pro yetkisi Joomla GRUP üyeliğinden geliyor ve
+            // grupta tarih yok; web (iyzico) aboneliğinin tarihi
+            // numistr_subscriptions.current_period_end'de duruyor. Mağaza (App Store /
+            // Play) aboneliklerinin tarihi RevenueCat tarafında, burada YOK -> null.
+            // Üniversite grubundan gelen ücretsiz Pro'da da satır yoktur -> null.
+            $sub = $isPro ? $this->findWebSubscription((int) $user->id) : null;
+
             $payload = [
                 'data' => [
                     'type' => $isPro ? 'pro' : 'free',
                     'is_pro' => $isPro,
+                    'source' => $sub['source'] ?? null,
+                    'plan' => $sub['plan'] ?? null,
+                    'status' => $sub['status'] ?? null,
+                    'expires_at' => $sub['expires_at'] ?? null,
                     'features' => [
                         'unlimited_access' => $isPro,
                         'download_images' => $isPro,
@@ -552,6 +563,57 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         } catch (\Throwable $e) {
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Kullanıcının web (iyzico) aboneliğinden kaynak/plan/durum/bitiş tarihi.
+     *
+     * Neden `status` ile süzülmüyor: iyzico İPTALLERDE webhook göndermiyor
+     * (destek teyidi 27.08.2026), bu yüzden `status` tek başına güvenilir değil ve
+     * kira (lease) modelinde asıl doğruluk kaynağı `current_period_end`. İptal edilmiş
+     * ama dönemi bitmemiş abonelik hâlâ geçerlidir; en güncel dönem sonu döndürülür.
+     *
+     * Tarih geçmişte olabilir (housekeeping cron'u henüz süpürmemişse): burada
+     * gizlenmiyor, olduğu gibi + `status` ile veriliyor; gösterme kararı istemcinin.
+     *
+     * @return array{source:string,plan:string,status:string,expires_at:?string}|null
+     */
+    private function findWebSubscription(int $userId): ?array
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+
+        try {
+            $db = Factory::getDbo();
+            $query = $db->getQuery(true)
+                ->select($db->quoteName(['source', 'plan', 'status', 'current_period_end']))
+                ->from($db->quoteName('numistr_subscriptions'))
+                ->where($db->quoteName('user_id') . ' = ' . (int) $userId)
+                ->order($db->quoteName('current_period_end') . ' DESC');
+
+            $db->setQuery($query, 0, 1);
+            $row = $db->loadAssoc();
+
+            if (!$row) {
+                return null;
+            }
+
+            $end = $row['current_period_end'] ?? null;
+
+            return [
+                'source' => (string) ($row['source'] ?? ''),
+                'plan' => (string) ($row['plan'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'expires_at' => ($end && $end !== $db->getNullDate()) ? (string) $end : null,
+            ];
+        } catch (\Throwable $e) {
+            // Tablo yoksa (kurulmamış) ya da sorgu hata verirse uç çökmez: Pro bilgisi
+            // zaten grup üyeliğinden geliyor, tarih yalnızca süslemedir.
+            $this->dbg('user-subscription-lookup', $e->getMessage());
+
+            return null;
         }
     }
 
