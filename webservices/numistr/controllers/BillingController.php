@@ -137,6 +137,32 @@ class BillingController
         if ($action === 'grant') {
             $changed = $membership->grantPro($userId);
         } elseif ($action === 'revoke') {
+            // S18: Magaza aboneligi bitti diye Pro'yu silmek, ayni kullanicinin
+            // web (iyzico) tarafinda ODENMIS ve SUREN bir donemi varsa hak kaybi olur.
+            // Iki odeme kanali bagimsiz; hicbiri digerini gormuyor. Ters yonde koruma
+            // zaten var (numistrbilling housekeeping -> hasActivePlayEntitlement), bu
+            // yon eksikti.
+            $web = self::webSubscriptionPeriod($userId);
+
+            if (self::keepsProFromWeb($web['expires_at'], $web['status'], time())) {
+                self::recordEvent($event, $raw, $userId, 'revoke_skipped_web');
+                self::log(
+                    'revoke-skipped-web',
+                    'user=' . $userId . ' event=' . $eventType
+                    . ' web_status=' . $web['status'] . ' web_until=' . (string) $web['expires_at']
+                );
+
+                $response->sendJson([
+                    'ok'       => true,
+                    'action'   => 'revoke_skipped_web',
+                    'changed'  => false,
+                    'user_id'  => $userId,
+                    'event_id' => $eventId,
+                ]);
+
+                return;
+            }
+
             $changed = $membership->revokePro($userId);
         }
 
@@ -301,6 +327,68 @@ class BillingController
     /**
      * Olayı denetim tablosuna yaz
      */
+    /**
+     * Web (iyzico) donem bilgisi: son kaydin bitis tarihi + durumu.
+     *
+     * @return array{expires_at:?string,status:string}
+     */
+    private static function webSubscriptionPeriod(int $userId): array
+    {
+        $empty = ['expires_at' => null, 'status' => ''];
+
+        if ($userId <= 0) {
+            return $empty;
+        }
+
+        try {
+            $db = Factory::getDbo();
+            $db->setQuery(
+                'SELECT ' . $db->quoteName('current_period_end') . ', ' . $db->quoteName('status')
+                . ' FROM ' . $db->quoteName('numistr_subscriptions')
+                . ' WHERE ' . $db->quoteName('user_id') . ' = ' . (int) $userId
+                . ' ORDER BY ' . $db->quoteName('current_period_end') . ' DESC LIMIT 1'
+            );
+
+            $row = $db->loadAssoc();
+
+            if (!$row) {
+                return $empty;
+            }
+
+            return [
+                'expires_at' => ($row['current_period_end'] ?? null) ?: null,
+                'status' => (string) ($row['status'] ?? ''),
+            ];
+        } catch (\Throwable $e) {
+            // Tablo yoksa ya da sorgu hata verirse korumasiz kalmak yerine "web yok"
+            // varsayilir; magaza olayi normal akisina devam eder.
+            self::log('web-period-lookup-failed', 'user=' . $userId . ' err=' . $e->getMessage());
+
+            return $empty;
+        }
+    }
+
+    /**
+     * Web (iyzico) donemi Pro hakkini hala tasiyor mu? (saf karar, test edilebilir)
+     *
+     * Kira (lease) modeli: iyzico IPTALLERDE webhook gondermiyor (destek teyidi
+     * 27.08.2026), bu yuzden asil dogruluk kaynagi donem sonu. IPTAL EDILMIS ama
+     * donemi bitmemis abonelik hala gecerlidir -> hak korunur.
+     *
+     * EXPIRED disarida: bu, supurme/uzlastirmanin "odeme yok" teyidinden sonra
+     * yazdigi nihai durum; donem sonu ileri gorunse bile bayat veridir.
+     */
+    public static function keepsProFromWeb(?string $expiresAt, string $status, int $nowTs): bool
+    {
+        if ($expiresAt === null || $expiresAt === '' || strtoupper($status) === 'EXPIRED') {
+            return false;
+        }
+
+        $ts = strtotime($expiresAt);
+
+        return $ts !== false && $ts > $nowTs;
+    }
+
     private static function recordEvent(array $event, string $raw, int $userId, string $action): void
     {
         try {
