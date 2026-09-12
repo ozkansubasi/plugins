@@ -1711,7 +1711,10 @@ class AssistantController
     {
         $s = mb_strtolower($s, 'UTF-8');
 
-        return strtr($s, ['ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u', 'â' => 'a', 'î' => 'i', 'û' => 'u']);
+        // U+0307 (birlesen nokta): PHP 8.3'te mb_strtolower('İ') tam Unicode katlamasi
+        // yaparak 'i' + U+0307 donduruyor. Nokta silinmezse 'Izmir' -> 'i̇zmir' olur ve
+        // keywordMatch() ASCII yazilmis anahtarlari (ör. 'iletisim') kacirir.
+        return strtr($s, ['ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u', 'â' => 'a', 'î' => 'i', 'û' => 'u', "\u{0307}" => '']);
     }
 
     public static function detectLang($param): string
