@@ -550,11 +550,25 @@ class PlgWebservicesNumistr extends CMSPlugin
                     'plan' => $sub['plan'] ?? null,
                     'status' => $sub['status'] ?? null,
                     'expires_at' => $sub['expires_at'] ?? null,
+                    // ADR-006: bayraklar paywall'daki kademe sözleriyle BİREBİR aynı dili
+                    // konuşur. Eski set (unlimited_access / download_images /
+                    // advanced_filters / favorites) hiçbir istemci tarafından okunmuyordu
+                    // ve paywall'la örtüşmüyordu — iki taraf farklı bir ürün tarif ediyordu.
+                    // 'favorites' => $isPro ÖZELLİKLE yanlıştı: favoriler ücretsiz kademede
+                    // de var, yalnızca 10 ile sınırlı.
                     'features' => [
-                        'unlimited_access' => $isPro,
-                        'download_images' => $isPro,
-                        'advanced_filters' => $isPro,
-                        'favorites' => $isPro,
+                        'high_capacity_recognition' => $isPro,
+                        'unlimited_favorites' => $isPro,
+                        'unlimited_collections' => $isPro,
+                        'ai_assistant_pro' => $isPro,
+                        'high_res_images' => $isPro,
+                        'offline_access' => $isPro,
+                    ],
+                    // Ücretsiz kademe tavanları; istemci bunları sabit kodlamak yerine
+                    // okuyabilsin diye açıkça yayımlanıyor (-1 = sınırsız).
+                    'limits' => [
+                        'favorites' => $isPro ? -1 : 10,
+                        'collections' => $isPro ? -1 : 1,
                     ]
                 ]
             ];
