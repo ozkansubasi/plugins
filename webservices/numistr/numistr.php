@@ -9,6 +9,7 @@ use Joomla\CMS\User\User;
 
 // Helper sınıflarını yükle (temel)
 require_once __DIR__ . '/helpers/AuthHelper.php';
+require_once __DIR__ . '/helpers/ImageSignHelper.php';
 
 // JWT doğrulayıcı (Auth0 imza kontrolü) — yoksa AuthHelper log_only'ye düşer
 if (file_exists(__DIR__ . '/helpers/JwtHelper.php')) {
@@ -1449,7 +1450,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $wm = (int)$app->input->get('wm', 1);
             $abs = (int)$app->input->get('abs', 0);
 
-            $data = $this->getVariantImages($db, $variantId, $wm, $abs);
+            $data = $this->getVariantImages($db, $variantId, $wm, $abs, $this->hdUserId());
             $this->responseHelper->sendJson(['data' => $data]);
 
         } catch (\Throwable $e) {
@@ -1683,7 +1684,7 @@ class PlgWebservicesNumistr extends CMSPlugin
 
             if ($includeImgs) {
                 $variantId = (int)($r['article_id'] ?? 0);
-                $payload['images'] = $variantId > 0 ? $this->getVariantImages($db, $variantId, $wmPref, $absUrl) : [];
+                $payload['images'] = $variantId > 0 ? $this->getVariantImages($db, $variantId, $wmPref, $absUrl, $this->hdUserId()) : [];
             }
 
             $this->responseHelper->sendJson(['data' => $payload]);
@@ -1963,7 +1964,39 @@ class PlgWebservicesNumistr extends CMSPlugin
         return $path;
     }
 
-    private function getVariantImages($db, int $variantId, int $wmPref = 1, int $abs = 0): array
+    /**
+     * ADR-006 Faz 2 — İsteği yapan kullanıcı Pro ise ve imza sırrı tanımlıysa kullanıcı id'si,
+     * aksi hâlde 0. Token yoksa/geçersizse authenticateUser() null döner (401 BASMAZ), bu yüzden
+     * herkese açık images uçlarında güvenle çağrılır: anonim istek eskisi gibi çalışır, url_hd=null.
+     */
+    private function hdUserId(): int
+    {
+        try {
+            $secret = (string) ($this->config['IMAGE_HD']['secret'] ?? '');
+            if ($secret === '') {
+                return 0;
+            }
+            $user = $this->authHelper->authenticateUser();
+            if ($user && (int) $user->id > 0 && $this->authHelper->hasProSubscription($user)) {
+                return (int) $user->id;
+            }
+        } catch (\Throwable $e) {
+            $this->dbg('hd-user', $e->getMessage());
+        }
+        return 0;
+    }
+
+    /** view=gorsel&wm=2 + u/exp/sig — bileşen imzayı doğrular (numistr_hd_verify). */
+    private function buildHdImageUrl(int $imageId, int $userId, int $abs = 0): string
+    {
+        $cfg = $this->config['IMAGE_HD'] ?? [];
+        $qs = ['option' => 'com_numistr', 'view' => 'gorsel', 'format' => 'raw', 'id' => $imageId]
+            + NumisTRImageSign::query($imageId, $userId, (int) ($cfg['ttl'] ?? 900), (string) $cfg['secret']);
+        $path = '/index.php?' . http_build_query($qs);
+        return $abs === 1 ? rtrim(Uri::root(), '/') . $path : $path;
+    }
+
+    private function getVariantImages($db, int $variantId, int $wmPref = 1, int $abs = 0, int $hdUserId = 0): array
     {
         $imgTbl = $db->quoteName('coins_images', 'ci');
         $q = $db->getQuery(true)
@@ -2021,6 +2054,8 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'ordering' => isset($r['ordering']) ? (int)$r['ordering'] : null,
                 'url' => $this->buildImageUrl($imageId, $wmPref, $abs),
                 'url_raw' => $this->buildImageUrl($imageId, 0, $abs),
+                // ADR-006 Faz 2: yalnız Pro + geçerli Bearer + sunucuda sır varsa; süreli imzalı URL
+                'url_hd' => $hdUserId > 0 ? $this->buildHdImageUrl($imageId, $hdUserId, $abs) : null,
                 'remote_url' => $remoteUrl,
             ];
             $data[] = $item;

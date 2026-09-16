@@ -27,6 +27,14 @@ return [
     'revenuecat_webhook_secret' => '',
 
     /*
+     * ADR-006 Faz 2 — Pro filigransız görsel imza sırrı (HMAC-SHA256).
+     * com_numistr bileşeni de bu dosyayı okur (JPATH_PLUGINS/.../secrets.php); bileşen
+     * ayarındaki 'hd_sign_secret' yalnızca yedek. Boş bırakılırsa özellik kapalıdır.
+     *   php -r "echo bin2hex(random_bytes(32));"
+     */
+    'image_hd_secret' => '',
+
+    /*
      * AI Asistan (ADR-003). Anahtarlar:
      *   GEMINI_API_KEY    : Google AI Studio (aistudio.google.com) API key
      *   ANTHROPIC_API_KEY : console.anthropic.com API key

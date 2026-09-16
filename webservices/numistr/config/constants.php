@@ -107,6 +107,16 @@ return [
     // Pro üyelik grup ID'si (Joomla User Groups'tan)
     'PRO_GROUP_ID' => 10,
 
+    /*
+     * ADR-006 Faz 2 — Pro "filigransız görsel" (view=gorsel&wm=2) imzalı URL.
+     * secret boşsa özellik KAPALI: images uçları url_hd=null döner, bileşen wm=2'yi 403'ler.
+     * Değer config/secrets.php içinde: 'image_hd_secret' (en az 32 karakter rastgele).
+     */
+    'IMAGE_HD' => [
+        'secret' => $secrets['image_hd_secret'] ?? '',
+        'ttl'    => 900,   // saniye; istemci url_hd'yi bu süre içinde çekmeli
+    ],
+
     // Üniversite öğrenci grup ID'si (ücretsiz Pro erişimi)
     // Joomla Admin > Users > Groups'ta oluşturulan "Universite Ogrencileri" grubunun ID'si
     // NOT: Grubu oluşturduktan sonra bu değeri güncelleyin!
