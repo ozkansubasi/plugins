@@ -2029,6 +2029,9 @@ class PlgWebservicesNumistr extends CMSPlugin
                 $db->quoteName('ci.diameter'),
                 $db->quoteName('ci.ordering'),
                 $db->quoteName('ci.remote_url'),
+                $db->quoteName('ci.source_credit'),
+                $db->quoteName('ci.license'),
+                $db->quoteName('ci.license_ok'),
             ])
             ->from($imgTbl)
             ->where($db->quoteName('ci.coin_id') . ' = ' . (int)$variantId)
@@ -2078,6 +2081,10 @@ class PlgWebservicesNumistr extends CMSPlugin
                 // ADR-006 Faz 2: yalnız Pro + geçerli Bearer + sunucuda sır varsa; süreli imzalı URL
                 'url_hd' => $hdUserId > 0 ? $this->buildHdImageUrl($imageId, $hdUserId, $abs) : null,
                 'remote_url' => $remoteUrl,
+                // ADR-008: kaynak atfi. CC BY gibi lisanslarda ZORUNLU, kamu malinda nezaket.
+                'credit' => ($r['source_credit'] ?? '') !== '' ? $r['source_credit'] : null,
+                'license' => ($r['license'] ?? '') !== '' ? $r['license'] : null,
+                'license_commercial_ok' => isset($r['license_ok']) ? (bool) $r['license_ok'] : null,
             ];
             $data[] = $item;
         }
