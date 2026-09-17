@@ -35,6 +35,14 @@ return [
     'image_hd_secret' => '',
 
     /*
+     * Görsel tamamlama hattı yönetici uçları (/v1/admin/gallery/*) — HMAC-SHA256 sırrı.
+     * Aynı değer yerelde .claude/secrets.local.md içinde 'gallery_admin_secret' olarak durur.
+     * En az 32 karakter; boş bırakılırsa uçlar kapalıdır (503).
+     *   php -r "echo bin2hex(random_bytes(32));"
+     */
+    'gallery_admin_secret' => '',
+
+    /*
      * AI Asistan (ADR-003). Anahtarlar:
      *   GEMINI_API_KEY    : Google AI Studio (aistudio.google.com) API key
      *   ANTHROPIC_API_KEY : console.anthropic.com API key

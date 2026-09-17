@@ -49,6 +49,13 @@ if (file_exists(__DIR__ . '/controllers/BillingController.php')) {
     require_once __DIR__ . '/controllers/BillingController.php';
 }
 
+// ---- Gorsel tamamlama hatti (yonetici uclari) - optional, all-or-nothing ----
+if (file_exists(__DIR__ . '/helpers/GalleryAdminHelper.php')
+    && file_exists(__DIR__ . '/controllers/GalleryAdminController.php')) {
+    require_once __DIR__ . '/helpers/GalleryAdminHelper.php';
+    require_once __DIR__ . '/controllers/GalleryAdminController.php';
+}
+
 // ---- AI Assistant (ADR-003, Phase 1) - optional, all-or-nothing ----
 // The controller is only loaded when every helper it depends on is present,
 // so a partial upload can never take the rest of /v1 down (2026-07-08 lesson).
@@ -312,6 +319,20 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
             BillingController::revenueCatWebhook();
+            return;
+        }
+
+        // ===================== GALLERY ADMIN: /v1/admin/gallery/* ==========
+        // HMAC imzali (secrets.php gallery_admin_secret); sir yoksa 503.
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/admin/gallery/(targets|publish|rollback)(?:[/?#;]|$)~', $uri, $m)) {
+            $this->dbg('gallery-admin-' . $m[1], $uri);
+
+            if (!class_exists('GalleryAdminController')) {
+                $this->responseHelper->sendError(503, 'Service Unavailable', 'Gallery admin not deployed');
+                return;
+            }
+
+            GalleryAdminController::handle($m[1]);
             return;
         }
 

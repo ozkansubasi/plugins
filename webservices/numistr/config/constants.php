@@ -117,6 +117,17 @@ return [
         'ttl'    => 900,   // saniye; istemci url_hd'yi bu süre içinde çekmeli
     ],
 
+    /*
+     * Görsel tamamlama hattı yönetici uçları (/v1/admin/gallery/*), HMAC-SHA256.
+     * secret boş/32 karakterden kısaysa uçlar KAPALI (503).
+     * Değer config/secrets.php içinde: 'gallery_admin_secret'.
+     */
+    'GALLERY_ADMIN' => [
+        'secret'       => $secrets['gallery_admin_secret'] ?? '',
+        'max_skew'     => 300,  // saniye; imza zaman damgası toleransı
+        'max_articles' => 50,   // istek başına makale
+    ],
+
     // Üniversite öğrenci grup ID'si (ücretsiz Pro erişimi)
     // Joomla Admin > Users > Groups'ta oluşturulan "Universite Ogrencileri" grubunun ID'si
     // NOT: Grubu oluşturduktan sonra bu değeri güncelleyin!
