@@ -241,12 +241,13 @@ final class NumisTRGalleryAdmin
     {
         $db  = $this->db;
         $map = $this->regionMap();
+        // item_id varchar'dır: COLLATE olmadan Joomla bağlantısında collation farkı 500 verir (2026-08-19 dersi).
         $sql = "SELECT a.id, a.catid, a.title, c.alias, k.value AS coin_uri
                 FROM #__content a
                 JOIN #__categories c ON c.id = a.catid
                 JOIN #__categories r ON r.id = " . (int) $this->rootCatId . "
                 LEFT JOIN #__fields f ON f.name = 'coin-id' AND f.context = 'com_content.article'
-                LEFT JOIN #__fields_values k ON k.field_id = f.id AND k.item_id = CAST(a.id AS CHAR)
+                LEFT JOIN #__fields_values k ON k.field_id = f.id AND k.item_id = CAST(a.id AS CHAR) COLLATE utf8mb4_unicode_ci
                 WHERE c.lft >= r.lft AND c.rgt <= r.rgt AND a.state = 1
                   AND NOT EXISTS (SELECT 1 FROM coins_images ci WHERE ci.coin_id = a.id)
                 ORDER BY a.id";
