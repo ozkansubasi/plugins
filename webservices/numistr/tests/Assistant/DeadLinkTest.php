@@ -59,8 +59,13 @@ check('external url untouched', mb_strpos($out, 'britishmuseum.org') !== false);
 $landing = $cfg['landing_urls'] ?? [];
 check('landing list exists for both languages', isset($landing['tr'], $landing['en']));
 check(
-    'english glossary alias is NOT listed (it 404s)',
+    'dead english glossary aliases are NOT listed (404 / 301 only)',
     !in_array('https://numistr.org/en/numizmatik-karsiliklar', $landing['en'] ?? [], true)
+        && !in_array('https://numistr.org/en/numismatic-dictonary', $landing['en'] ?? [], true)
+);
+check(
+    'real english glossary is listed',
+    in_array('https://numistr.org/en/numismatic-dictionary', $landing['en'] ?? [], true)
 );
 $all = array_merge($landing['tr'] ?? [], $landing['en'] ?? []);
 
@@ -113,4 +118,16 @@ $enKb = file_get_contents($root . '/assistant/core-kb.en.md');
 check(
     'core-kb.en.md no longer links the dead english glossary',
     mb_strpos((string) $enKb, 'en/numizmatik-karsiliklar') === false
+        && mb_strpos((string) $enKb, 'numismatic-dictonary') === false
 );
+check(
+    'core-kb.en.md links the real english glossary',
+    mb_strpos((string) $enKb, 'https://numistr.org/en/numismatic-dictionary') !== false
+);
+
+// ---- glossaryUrl() per language (1.14.1) ----
+$gu = new ReflectionMethod($C, 'glossaryUrl');
+$gu->setAccessible(true);
+check('glossary tr unchanged', str_ends_with((string) $gu->invoke(null, 'tr'), '/tr/numizmatik-karsiliklar'));
+check('glossary en is the real page', str_ends_with((string) $gu->invoke(null, 'en'), '/en/numismatic-dictionary'));
+check('glossary unknown language is empty', $gu->invoke(null, 'de') === '');

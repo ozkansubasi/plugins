@@ -1131,8 +1131,8 @@ class AssistantController
         // The curated core KB is the site's own link list (about, faq, map, region
         // coin pages...). Those are vouched for, so they belong in the allowed set:
         // without them the site route would lose its own legitimate links. Checked
-        // 2026-09-09: 27 of the 28 URLs in that file return 200, the odd one out
-        // being the English glossary alias, which glossaryUrl() no longer emits.
+        // 2026-09-09: 27 of the 28 URLs in that file return 200; the odd one out,
+        // the English glossary, was replaced on 2026-09-18 by the page's real alias.
         $allowed = array_merge(
             array_column((array) ($res['sources'] ?? []), 'url'),
             (array) (self::$config['landing_urls'][$lang] ?? []),
@@ -1299,21 +1299,26 @@ class AssistantController
      * Public glossary page. Terminology chunks are attributed here, never to the
      * private Google Doc they were ingested from.
      *
-     * Returns '' for English on purpose. /en/numizmatik-karsiliklar is a 404 -
-     * there is no English glossary page (the site's own English menu links to the
-     * same dead alias, so this predates the assistant). Every English terminology
-     * answer was citing it. Attributing a source to a page that does not exist is
-     * worse than not attributing one, so callers skip an empty URL; restore the
-     * entry here once the page is published.
+     * The two languages do not share an alias. The English page was always there
+     * (article 30672, menu item 347), but the English footer linked the Turkish
+     * menu item, which routes to /en/numizmatik-karsiliklar - a 404 - and from
+     * 1.10 to 1.14.0 English answers cited no glossary at all because of it.
+     * Fixed on the site 2026-09-18: footer points at the English item, its alias
+     * lost the "dictonary" typo, and both dead forms 301 to the URL below.
+     * Callers still skip an empty URL for any other language.
      */
     private static function glossaryUrl(string $lang): string
     {
-        if ($lang !== 'tr') {
+        $paths = [
+            'tr' => '/tr/numizmatik-karsiliklar',
+            'en' => '/en/numismatic-dictionary',
+        ];
+
+        if (!isset($paths[$lang])) {
             return '';
         }
 
-        return (string) (self::$config['site_base'] ?? 'https://numistr.org')
-            . '/tr/numizmatik-karsiliklar';
+        return (string) (self::$config['site_base'] ?? 'https://numistr.org') . $paths[$lang];
     }
 
     private static function routeSite($llm, string $message, array $history, string $lang, string $rules, array $limits, NumisTRAssistantCoreKb $coreKb): array

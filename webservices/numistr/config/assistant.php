@@ -325,9 +325,9 @@ return [
     // /tr/sikkeler and /tr/antik-yerlesimleri on its own - all 404, and the last one
     // is a single letter away from the real alias.
     //
-    // en has no glossary entry on purpose: /en/numizmatik-karsiliklar is a 404. The
-    // site's own English menu links to that dead alias too; until the page exists an
-    // English answer should cite nothing rather than a broken page.
+    // The English glossary is /en/numismatic-dictionary (verified 200 on 2026-09-18).
+    // Never list /en/numizmatik-karsiliklar or /en/numismatic-dictonary: both only
+    // 301 there now, and the first was a 404 that English answers cited until 1.10.
     'landing_urls' => [
         'tr' => [
             'https://numistr.org/tr',
@@ -379,6 +379,7 @@ return [
             'https://numistr.org/en/about-us',
             'https://numistr.org/en/our-mission-and-vision',
             'https://numistr.org/en/faq',
+            'https://numistr.org/en/numismatic-dictionary',
             'https://numistr.org/en/contact',
             'https://numistr.org/en/terms-of-use',
             'https://numistr.org/en/privacy-policy-gdpr',
