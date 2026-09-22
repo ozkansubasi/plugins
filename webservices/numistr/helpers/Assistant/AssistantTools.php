@@ -578,6 +578,25 @@ class NumisTRAssistantTools
             . ' AND ' . $db->quoteName($alias . '.field_id') . ' = ' . (int) $fieldId;
     }
 
+    /**
+     * View column first, custom field as fallback (joined onto $q). The field is cast only when it
+     * is a plain integer, so a malformed value cannot silently become year 0.
+     */
+    private function yearFieldExpr($q, $db, string $fvTable, string $viewCol, string $fieldKey, string $alias): string
+    {
+        $expr = $db->quoteName($viewCol);
+        $fid  = $this->dbHelper()->fid($fieldKey);
+
+        if ($fid === null) {
+            return $expr;
+        }
+
+        $q->join('LEFT', $this->fvJoin($db, $fvTable, $alias, (int) $fid, 'v.article_id'));
+        $val = $db->quoteName($alias . '.value');
+
+        return 'COALESCE(' . $expr . ', CASE WHEN ' . $val . " REGEXP '^-?[0-9]+$' THEN CAST(" . $val . ' AS SIGNED) END)';
+    }
+
     // ======================================================================
     // search_coins / get_variant
     // ======================================================================
@@ -637,6 +656,18 @@ class NumisTRAssistantTools
             $q->select($db->quoteName('v.metal', 'metal_eff'));
         }
 
+        // date: the view's date_from/date_to are empty too (measured 2026-09-23); the year lives in
+        // start_date / end_date custom fields. Without this the date filter's IS NULL branch let
+        // every coin through and results carried no dates.
+        $dateFromExpr = $this->yearFieldExpr($q, $db, $fvTable, 'v.date_from', 'start_date', 'fv_dfrom');
+        $dateToExpr   = $this->yearFieldExpr($q, $db, $fvTable, 'v.date_to', 'end_date', 'fv_dto');
+
+        // one known end stands in for the other
+        $effFrom = 'COALESCE(' . $dateFromExpr . ', ' . $dateToExpr . ')';
+        $effTo   = 'COALESCE(' . $dateToExpr . ', ' . $dateFromExpr . ')';
+        $q->select($effFrom . ' AS ' . $db->quoteName('date_from_eff'));
+        $q->select($effTo . ' AS ' . $db->quoteName('date_to_eff'));
+
         $region = self::normaliseRegion($in['region'] ?? null);
 
         if ($region !== null) {
@@ -676,8 +707,8 @@ class NumisTRAssistantTools
                 [$from, $to] = [$to, $from];
             }
 
-            $q->where('(' . $db->quoteName('v.date_to') . ' IS NULL OR ' . $db->quoteName('v.date_to') . ' >= ' . (int) $from . ')');
-            $q->where('(' . $db->quoteName('v.date_from') . ' IS NULL OR ' . $db->quoteName('v.date_from') . ' <= ' . (int) $to . ')');
+            // undated coins no longer pass: they are not an answer to "coins of 650-480 BC"
+            $q->where('(' . $effFrom . ' IS NOT NULL AND ' . $effTo . ' >= ' . (int) $from . ' AND ' . $effFrom . ' <= ' . (int) $to . ')');
         }
 
         $mint     = mb_strtolower(trim((string) ($in['mint'] ?? '')), 'UTF-8');
@@ -775,8 +806,8 @@ class NumisTRAssistantTools
             'title'      => $title,
             'region'     => $r['region_code'],
             'metal'      => $this->dbHelper()->normalizeMaterialKey((string) ($r['metal_eff'] ?? $r['metal'] ?? '')),
-            'date_from'  => $r['date_from'] !== null ? (int) $r['date_from'] : null,
-            'date_to'    => $r['date_to'] !== null ? (int) $r['date_to'] : null,
+            'date_from'  => ($r['date_from_eff'] ?? $r['date_from'] ?? null) !== null ? (int) ($r['date_from_eff'] ?? $r['date_from']) : null,
+            'date_to'    => ($r['date_to_eff'] ?? $r['date_to'] ?? null) !== null ? (int) ($r['date_to_eff'] ?? $r['date_to']) : null,
             'mint'       => $r['mint_eff'] ?? $r['mint_name'] ?? null,
             'authority'  => $r['authority_name'] ?? null,
             'url'        => self::coinUrl($base, $lang, (string) $r['region_code'], (int) $r['article_id'], (string) ($r['alias'] ?: $r['slug'])),

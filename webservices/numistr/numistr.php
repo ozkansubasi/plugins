@@ -1147,6 +1147,13 @@ class PlgWebservicesNumistr extends CMSPlugin
                 $q->select('NULL AS ' . $db->quoteName('authority_value')); 
             }
 
+            // Tarih: gorunumdeki date_from/date_to sutunlari BOS; yil ozel alanlarda (start_date/end_date).
+            // Yalniz yil filtresi varken JOIN edilir (liste sorgusunu gereksiz agirlastirmamak icin).
+            $dateFids = ['from' => null, 'to' => null];
+            if ($yearFromF !== null || $yearToF !== null) {
+                $dateFids = $this->joinDateFields($db, [$q, $qCount], $fvTbl);
+            }
+
             // Filtreler uygula
             $this->applyVariantFilters($db, $q, $qCount, [
                 'material' => $materialF,
@@ -1156,6 +1163,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'year_from' => $yearFromF,
                 'year_to' => $yearToF,
                 'has_images' => $hasImagesF,
+                'date_fids' => $dateFids,
             ], $matFieldId, $mintFieldId, $authFieldId);
 
             // Total
@@ -1262,6 +1270,9 @@ class PlgWebservicesNumistr extends CMSPlugin
                     . ' AND ' . $db->quoteName('fv_auth.field_id') . ' = ' . (int)$authFieldId);
             }
 
+            // Tarih ozel alanlari: yil faseti ve yil filtresi ikisi de bunlara dayanir.
+            $dateFids = $this->joinDateFields($db, [$qBase], $fvTbl);
+
             $qCount = clone $qBase;
             $qCount->clear('select')->select('COUNT(*)');
 
@@ -1272,6 +1283,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'region' => $regionF,
                 'year_from' => $yearFromF,
                 'year_to' => $yearToF,
+                'date_fids' => $dateFids,
             ], $matFieldId, $mintFieldId, $authFieldId);
 
             $db->setQuery($qCount);
@@ -1281,7 +1293,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'mint' => $this->getFacetMint($db, $qBase, $mintFieldId, $facetLimit),
                 'authority' => $this->getFacetAuthority($db, $qBase, $authFieldId, $facetLimit),
                 'material' => $this->getFacetMaterial($db, $qBase, $matFieldId, $facetLimit),
-                'years' => $this->getFacetYears($db, $qBase, $yearsBucket),
+                'years' => $this->getFacetYears($db, $qBase, $yearsBucket, $dateFids),
             ];
 
             $this->responseHelper->sendJson(['meta'=>['total'=>$total, 'years_bucket'=>$yearsBucket], 'facets'=>$facets]);
@@ -1789,15 +1801,10 @@ class PlgWebservicesNumistr extends CMSPlugin
             $qCount->where($db->quoteName('v.region_code') . ' = ' . $db->quote($filters['region']));
         }
 
-        if ($filters['year_from'] !== null || $filters['year_to'] !== null) {
-            $lhsFrom = $db->quoteName('v.date_from');
-            $lhsTo = $db->quoteName('v.date_to');
-            $yf = $filters['year_from'] ?? $filters['year_to'];
-            $yt = $filters['year_to'] ?? $filters['year_from'];
-            $q->where("($lhsTo IS NULL OR $lhsTo >= " . (int)$yf . ')');
-            $q->where("($lhsFrom IS NULL OR $lhsFrom <= " . (int)$yt . ')');
-            $qCount->where("($lhsTo IS NULL OR $lhsTo >= " . (int)$yf . ')');
-            $qCount->where("($lhsFrom IS NULL OR $lhsFrom <= " . (int)$yt . ')');
+        $yearWhere = $this->yearOverlapWhere($db, $filters);
+        if ($yearWhere !== null) {
+            $q->where($yearWhere);
+            $qCount->where($yearWhere);
         }
 
         if ($filters['has_images']) {
@@ -1859,15 +1866,10 @@ class PlgWebservicesNumistr extends CMSPlugin
             $qCount->where($db->quoteName('v.region_code') . ' = ' . $db->quote($filters['region']));
         }
 
-        if ($filters['year_from'] !== null || $filters['year_to'] !== null) {
-            $lhsFrom = $db->quoteName('v.date_from');
-            $lhsTo = $db->quoteName('v.date_to');
-            $yf = $filters['year_from'] ?? $filters['year_to'];
-            $yt = $filters['year_to'] ?? $filters['year_from'];
-            $qBase->where("($lhsTo IS NULL OR $lhsTo >= " . (int)$yf . ')');
-            $qBase->where("($lhsFrom IS NULL OR $lhsFrom <= " . (int)$yt . ')');
-            $qCount->where("($lhsTo IS NULL OR $lhsTo >= " . (int)$yf . ')');
-            $qCount->where("($lhsFrom IS NULL OR $lhsFrom <= " . (int)$yt . ')');
+        $yearWhere = $this->yearOverlapWhere($db, $filters);
+        if ($yearWhere !== null) {
+            $qBase->where($yearWhere);
+            $qCount->where($yearWhere);
         }
     }
 
@@ -1950,9 +1952,75 @@ class PlgWebservicesNumistr extends CMSPlugin
         }, $rows);
     }
 
-    private function getFacetYears($db, $qBase, int $yearsBucket): array
+    /**
+     * Tarih ozel alanlarini (start_date / end_date) verilen sorgulara LEFT JOIN eder.
+     * o_numistr_variants_public gorunumundeki date_from/date_to sutunlari bos geliyor
+     * (olcum 2026-09-23: /v1/variants listesinde hepsi null, /v1/variants/{id} ozel alandan
+     * dolu donuyor). Bu yuzden yil filtresi IS NULL dalindan her kaydi geciriyordu.
+     *
+     * @return array{from: ?int, to: ?int} JOIN edilen alan kimlikleri (alan yoksa null)
+     */
+    private function joinDateFields($db, array $queries, callable $fvTbl): array
     {
-        $yExpr = 'COALESCE(' . $db->quoteName('v.date_from') . ', ' . $db->quoteName('v.date_to') . ')';
+        $fids = ['from' => $this->dbHelper->fid('start_date'), 'to' => $this->dbHelper->fid('end_date')];
+        foreach (['from' => 'fv_dfrom', 'to' => 'fv_dto'] as $k => $alias) {
+            if ($fids[$k] === null) {
+                continue;
+            }
+            $on = $db->quoteName($alias . '.item_id') . ' = CAST(' . $db->quoteName('v.article_id') . ' AS CHAR) COLLATE utf8mb4_unicode_ci'
+                . ' AND ' . $db->quoteName($alias . '.field_id') . ' = ' . (int)$fids[$k];
+            foreach ($queries as $query) {
+                $query->join('LEFT', $fvTbl($alias) . ' ON ' . $on);
+            }
+        }
+        return $fids;
+    }
+
+    /**
+     * Etkin baslangic / bitis yili: once gorunum sutunu, bos ise ozel alan.
+     * Ozel alan yalniz tamsayi bicimindeyse sayiya cevrilir (bozuk metin 0 olup MO/MS
+     * sinirini sessizce kaydirmasin). Tek uc biliniyorsa oteki uc ona esitlenir.
+     *
+     * @return array{0: string, 1: string} [baslangic ifadesi, bitis ifadesi]
+     */
+    private function effectiveYearExprs($db, array $dateFids): array
+    {
+        $col = function (string $viewCol, ?int $fid, string $alias) use ($db): string {
+            $expr = $db->quoteName($viewCol);
+            if ($fid !== null) {
+                $val = $db->quoteName($alias . '.value');
+                $expr = 'COALESCE(' . $expr . ', CASE WHEN ' . $val . " REGEXP '^-?[0-9]+$' THEN CAST(" . $val . ' AS SIGNED) END)';
+            }
+            return $expr;
+        };
+        $from = $col('v.date_from', $dateFids['from'] ?? null, 'fv_dfrom');
+        $to = $col('v.date_to', $dateFids['to'] ?? null, 'fv_dto');
+        return ['COALESCE(' . $from . ', ' . $to . ')', 'COALESCE(' . $to . ', ' . $from . ')'];
+    }
+
+    /**
+     * Yil araligi cakisma kosulu. Tarihsiz kayit ARTIK GECMEZ: "MO 650-480 sikkeleri"
+     * sorusuna tarihi bilinmeyen sikke cevap degildir (eskiden IS NULL dali hepsini geciriyordu;
+     * MO 650-480 ve MS 9000-9001 ikisi de 10.057 donuyordu).
+     */
+    private function yearOverlapWhere($db, array $filters): ?string
+    {
+        if ($filters['year_from'] === null && $filters['year_to'] === null) {
+            return null;
+        }
+        $yf = (int)($filters['year_from'] ?? $filters['year_to']);
+        $yt = (int)($filters['year_to'] ?? $filters['year_from']);
+        if ($yf > $yt) {
+            [$yf, $yt] = [$yt, $yf];
+        }
+        [$effFrom, $effTo] = $this->effectiveYearExprs($db, $filters['date_fids'] ?? ['from' => null, 'to' => null]);
+        return '(' . $effFrom . ' IS NOT NULL AND ' . $effTo . ' >= ' . $yf . ' AND ' . $effFrom . ' <= ' . $yt . ')';
+    }
+
+    private function getFacetYears($db, $qBase, int $yearsBucket, array $dateFids = ['from' => null, 'to' => null]): array
+    {
+        [$effFrom, $effTo] = $this->effectiveYearExprs($db, $dateFids);
+        $yExpr = 'COALESCE(' . $effFrom . ', ' . $effTo . ')';
         $bucketStartExpr = 'FLOOR(' . $yExpr . ' / ' . (int)$yearsBucket . ') * ' . (int)$yearsBucket;
         
         $qYears = clone $qBase;
