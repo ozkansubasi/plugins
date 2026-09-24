@@ -44,8 +44,9 @@ $rawPath = getenv('NUMISTR_COMPONENT_RAW') ?: ($root . '/../../../numistr/compon
 if (is_file($rawPath)) {
     $src = (string) file_get_contents($rawPath);
     // Yalnız imza fonksiyonlarını çıkar (dosyanın geri kalanı Joomla ister); farklı isimle tanımla.
-    $ok = preg_match('/function numistr_hd_sign\(.*?\n}\n/s', $src, $m1)
-       && preg_match('/function numistr_hd_verify\(.*?\n}\n/s', $src, $m2);
+    // \R: Windows çalışma kopyası CRLF (core.autocrlf), depo LF — ikisinde de eşleşmeli.
+    $ok = preg_match('/function numistr_hd_sign\(.*?\R}\R/s', $src, $m1)
+       && preg_match('/function numistr_hd_verify\(.*?\R}\R/s', $src, $m2);
     check('bileşen imza fonksiyonları bulundu', (bool) $ok, $rawPath);
     if ($ok) {
         eval(str_replace(['numistr_hd_sign', 'numistr_hd_verify'], ['cmp_hd_sign', 'cmp_hd_verify'], $m1[0] . $m2[0]));
