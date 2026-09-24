@@ -56,6 +56,13 @@ if (file_exists(__DIR__ . '/helpers/GalleryAdminHelper.php')
     require_once __DIR__ . '/controllers/GalleryAdminController.php';
 }
 
+// ---- Katalog motif aramasi (ic uc, 1.15.0) - optional, all-or-nothing ----
+if (file_exists(__DIR__ . '/helpers/MotifSearchHelper.php')
+    && file_exists(__DIR__ . '/controllers/CatalogSearchController.php')) {
+    require_once __DIR__ . '/helpers/MotifSearchHelper.php';
+    require_once __DIR__ . '/controllers/CatalogSearchController.php';
+}
+
 // ---- AI Assistant (ADR-003, Phase 1) - optional, all-or-nothing ----
 // The controller is only loaded when every helper it depends on is present,
 // so a partial upload can never take the rest of /v1 down (2026-07-08 lesson).
@@ -426,6 +433,19 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== STATISTICS: /v1/stats =======================
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/stats(?:[/?#;]|$)~', $uri)) {
             $this->handleStats($uri);
+            return;
+        }
+
+        // ===================== MOTIF COUNT (ic): /v1/variants/motif-count ==
+        // X-NumisTR-KB korumali; /KB fizibilite kapisi + icerik hatti (1.15.0).
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/variants/motif-count(?:[/?#;]|$)~', $uri)) {
+            $this->dbg('variants-motif-count', $uri);
+            if (!class_exists('CatalogSearchController')) {
+                $this->responseHelper->sendError(503, 'Service Unavailable', 'Motif search not deployed');
+                return;
+            }
+            $this->checkRateLimit('facets', $this->config['RATE_LIMITS']['facets'] ?? 60);
+            CatalogSearchController::motifCount();
             return;
         }
 
