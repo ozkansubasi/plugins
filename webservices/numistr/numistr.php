@@ -2166,8 +2166,11 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'ordering' => isset($r['ordering']) ? (int)$r['ordering'] : null,
                 'url' => $this->buildImageUrl($imageId, $wmPref, $abs),
                 'url_raw' => $this->buildImageUrl($imageId, 0, $abs),
-                // ADR-006 Faz 2: yalnız Pro + geçerli Bearer + sunucuda sır varsa; süreli imzalı URL
-                'url_hd' => $hdUserId > 0 ? $this->buildHdImageUrl($imageId, $hdUserId, $abs) : null,
+                // ADR-006 Faz 2: yalnız Pro + geçerli Bearer + sunucuda sır varsa; süreli imzalı URL.
+                // ADR-008 rev. 2026-09-25: yalnız serbest lisanslı görselde. NC / doğrulanmamış görsel
+                // herkese filigransız ve aynı verilir (bileşen), Pro'ya ayrı bir sürümü yoktur.
+                'url_hd' => ($hdUserId > 0 && (int) ($r['license_ok'] ?? 0) === 1)
+                    ? $this->buildHdImageUrl($imageId, $hdUserId, $abs) : null,
                 'remote_url' => $remoteUrl,
                 // ADR-008: kaynak atfi. CC BY gibi lisanslarda ZORUNLU, kamu malinda nezaket.
                 'credit' => ($r['source_credit'] ?? '') !== '' ? $r['source_credit'] : null,
