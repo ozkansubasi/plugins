@@ -1085,9 +1085,9 @@ class AssistantController
         $cost      = NumisTRLLMClient::cost($costs, (string) ($models['classify'] ?? ''), $cls['tokens_in'], $cls['tokens_out']);
 
         // 7. route
-        $cta     = ($sType === 'anon');
-        $rules   = self::rulesFor(self::$config, $lang, $cta);
+        $rules   = (string) (self::$config['prompts'][$lang]['rules'] ?? '');
         $coreKb  = new NumisTRAssistantCoreKb();
+        $cta     = ($sType === 'anon');
 
         switch ($route) {
             case 'other':
@@ -1241,26 +1241,6 @@ class AssistantController
     }
 
     /**
-     * System rules for one request.
-     *
-     * The "register for free and use the app" reminder (identify_cta) is added for
-     * anonymous visitors only: members - and every app user, since the app requires
-     * sign-in - already have an account. As a general rule it was appended even to
-     * "What is a kistophoros?" (2026-09-26 device test).
-     */
-    public static function rulesFor(array $config, string $lang, bool $anon): string
-    {
-        $prompts = (array) ($config['prompts'][$lang] ?? []);
-        $rules   = (string) ($prompts['rules'] ?? '');
-
-        if ($anon && !empty($prompts['identify_cta'])) {
-            $rules .= "\n" . (string) $prompts['identify_cta'];
-        }
-
-        return $rules;
-    }
-
-    /**
      * Numbered context for the explain route, plus its sources.
      *
      * One numbered list across both stores, so a [n] citation is unambiguous. The
@@ -1392,9 +1372,7 @@ class AssistantController
 
         $r = $llm->geminiGenerate($model, $system, $history, $message, [
             'max_output' => (int) $limits['max_output'],
-            // Kurallar anonim/uye icin farkli (rulesFor) -> tek anahtar her geciste
-            // Gemini onbellegini yeniden kurardi. Anahtar kural metnine bagli.
-            'cache_key'  => 'site_' . $lang . '_' . substr(md5($rules), 0, 8),
+            'cache_key'  => 'site_' . $lang,
         ]);
 
         if (!$r['ok']) {

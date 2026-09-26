@@ -1,12 +1,14 @@
 <?php
 /**
- * Explain-route citations and the anonymous-only app reminder (1.16.1).
+ * Explain-route citations (1.16.1) and no model-written app reminder (1.16.2).
  *
  * 1. Every source carries the [n] numbers that point at it. The numbers do not
  *    follow the source list (terminology chunks share one glossary link), so a
  *    client that counted links would label the wrong article.
- * 2. The "register for free and use the app" reminder is for anonymous visitors
- *    only; members and app users (sign-in required) already have an account.
+ * 2. The "register for free and use the app" reminder is not a model rule: it
+ *    was added to fact questions, reached members and app users (sign-in
+ *    required), and for anonymous visitors duplicated the fixed cta_register
+ *    sentence the server appends on the site/tools routes.
  */
 
 require_once $root . '/helpers/AuthHelper.php';
@@ -44,13 +46,12 @@ $ctx = $C::explainContext($kb, $site, 'de', '');
 check('no glossary url: terminology not linked', count($ctx['sources']) === 2);
 check('no glossary url: articles still [3] and [4]', $ctx['sources'][0]['refs'] === [3] && $ctx['sources'][1]['refs'] === [4]);
 
-// ---- anonymous-only reminder ----
+// ---- no model-written app reminder ----
 $config = require $root . '/config/assistant.php';
 
 foreach (['tr', 'en'] as $lang) {
-    $member = $C::rulesFor($config, $lang, false);
-    $anon   = $C::rulesFor($config, $lang, true);
-    check("$lang: member rules do not mention the app", stripos($member, 'AnatolianCoins') === false);
-    check("$lang: anonymous rules add the reminder", stripos($anon, 'AnatolianCoins') !== false);
-    check("$lang: anonymous rules start with the member rules", str_starts_with($anon, $member));
+    $prompts = $config['prompts'][$lang];
+    check("$lang: rules do not mention the app", stripos($prompts['rules'], 'AnatolianCoins') === false);
+    check("$lang: no identify_cta prompt", !isset($prompts['identify_cta']));
+    check("$lang: fixed anonymous sentence still configured", stripos((string) ($config['messages'][$lang]['cta_register'] ?? ''), 'AnatolianCoins') !== false);
 }
