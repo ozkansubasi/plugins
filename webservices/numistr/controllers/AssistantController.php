@@ -1085,9 +1085,9 @@ class AssistantController
         $cost      = NumisTRLLMClient::cost($costs, (string) ($models['classify'] ?? ''), $cls['tokens_in'], $cls['tokens_out']);
 
         // 7. route
-        $rules   = (string) (self::$config['prompts'][$lang]['rules'] ?? '');
-        $coreKb  = new NumisTRAssistantCoreKb();
         $cta     = ($sType === 'anon');
+        $rules   = self::rulesFor(self::$config, $lang, $cta);
+        $coreKb  = new NumisTRAssistantCoreKb();
 
         switch ($route) {
             case 'other':
@@ -1241,6 +1241,70 @@ class AssistantController
     }
 
     /**
+     * System rules for one request.
+     *
+     * The "register for free and use the app" reminder (identify_cta) is added for
+     * anonymous visitors only: members - and every app user, since the app requires
+     * sign-in - already have an account. As a general rule it was appended even to
+     * "What is a kistophoros?" (2026-09-26 device test).
+     */
+    public static function rulesFor(array $config, string $lang, bool $anon): string
+    {
+        $prompts = (array) ($config['prompts'][$lang] ?? []);
+        $rules   = (string) ($prompts['rules'] ?? '');
+
+        if ($anon && !empty($prompts['identify_cta'])) {
+            $rules .= "\n" . (string) $prompts['identify_cta'];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * Numbered context for the explain route, plus its sources.
+     *
+     * One numbered list across both stores, so a [n] citation is unambiguous. The
+     * numbers do NOT follow the source list: every terminology chunk collapses into
+     * a single glossary link (their content_url is the private Google Doc), so with
+     * two chunks the first article is [3] but the second link. Each source therefore
+     * carries the numbers that point at it ('refs'); clients print them next to the
+     * link instead of counting (2026-09-26: the app showed [1, 2] in the text and
+     * unnumbered links).
+     *
+     * @return array{lines: string[], sources: array<int, array{title: string, url: string, refs: int[]}>}
+     */
+    public static function explainContext(array $kbItems, array $siteItems, string $lang, string $glossaryUrl): array
+    {
+        $lines   = [];
+        $sources = [];
+        $kbRefs  = [];
+        $n       = 0;
+
+        foreach ($kbItems as $it) {
+            $n++;
+            $kbRefs[] = $n;
+            $label    = $lang === 'en' ? 'terminology' : 'terminoloji';
+            $lines[]  = '[' . $n . '] ' . $it['title'] . ' (' . $label . ")\n" . $it['text'];
+        }
+
+        if ($kbRefs && $glossaryUrl !== '') {
+            $sources[] = [
+                'title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler',
+                'url'   => $glossaryUrl,
+                'refs'  => $kbRefs,
+            ];
+        }
+
+        foreach ($siteItems as $it) {
+            $n++;
+            $lines[]   = '[' . $n . '] ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
+            $sources[] = ['title' => $it['title'], 'url' => $it['url'], 'refs' => [$n]];
+        }
+
+        return ['lines' => $lines, 'sources' => $sources];
+    }
+
+    /**
      * Keep only the pre-fetched sources the answer actually talks about.
      *
      * Context handed to the model up front is not evidence for whatever it ends up
@@ -1328,7 +1392,9 @@ class AssistantController
 
         $r = $llm->geminiGenerate($model, $system, $history, $message, [
             'max_output' => (int) $limits['max_output'],
-            'cache_key'  => 'site_' . $lang,
+            // Kurallar anonim/uye icin farkli (rulesFor) -> tek anahtar her geciste
+            // Gemini onbellegini yeniden kurardi. Anahtar kural metnine bagli.
+            'cache_key'  => 'site_' . $lang . '_' . substr(md5($rules), 0, 8),
         ]);
 
         if (!$r['ok']) {
@@ -1530,31 +1596,7 @@ class AssistantController
             return $res;
         }
 
-        // One numbered list across both stores, so a [n] citation is unambiguous.
-        $lines   = [];
-        $sources = [];
-        $n       = 0;
-
-        // Terminology chunks come from Google Docs; their content_url is the private
-        // source document, so cite the public glossary page instead (once).
-        $glossaryUrl   = self::glossaryUrl($lang);
-        $glossaryTitle = $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler';
-
-        foreach ($kbItems as $it) {
-            $n++;
-            $label   = $lang === 'en' ? 'terminology' : 'terminoloji';
-            $lines[] = '[' . $n . '] ' . $it['title'] . ' (' . $label . ")\n" . $it['text'];
-        }
-
-        if (!empty($kbItems) && $glossaryUrl !== '') {
-            $sources[] = ['title' => $glossaryTitle, 'url' => $glossaryUrl];
-        }
-
-        foreach ($siteItems as $it) {
-            $n++;
-            $lines[]   = '[' . $n . '] ' . $it['title'] . ' (' . $it['url'] . ")\n" . $it['text'];
-            $sources[] = ['title' => $it['title'], 'url' => $it['url']];
-        }
+        ['lines' => $lines, 'sources' => $sources] = self::explainContext($kbItems, $siteItems, $lang, self::glossaryUrl($lang));
 
         $system = $rules . "\n\n" . (string) (self::$config['prompts'][$lang]['explain_hint'] ?? '')
             . "\n\n" . ($lang === 'en' ? 'CONTEXT:' : 'BAGLAM:') . "\n" . implode("\n\n", $lines);
