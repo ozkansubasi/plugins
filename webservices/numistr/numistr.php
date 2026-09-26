@@ -2494,6 +2494,42 @@ class PlgWebservicesNumistr extends CMSPlugin
         }
     }
 
+    /** TR blog kök kategorisi; diğer dillerin kökü buna ilişkilendirmeyle bağlı. */
+    private const BLOG_ROOT_CAT_ID = 8;
+
+    /**
+     * İstenen dildeki blog kök kategorisi (`?lang=tr|en|…`).
+     *
+     * Dil verilmezse ya da o dilde ilişkili blog kategorisi yoksa TR kökü döner:
+     * dil göndermeyen uygulama sürümleri (≤ 0.5.2) bugünkü sonucu alır. Yeni dil
+     * için kod değişmez — blog kategorisini o dilde açıp Joomla'da TR kökle
+     * ilişkilendirmek (com_categories.item) yeter.
+     */
+    private function blogRootCatId($db): int
+    {
+        $lang = strtolower(trim((string) Factory::getApplication()->input->getString('lang', '')));
+        if (!preg_match('/^[a-z]{2}$/', $lang)) {
+            return self::BLOG_ROOT_CAT_ID;
+        }
+
+        $query = $db->getQuery(true)
+            ->select($db->quoteName('cat.id'))
+            ->from($db->quoteName('#__associations', 'a1'))
+            ->join('INNER', $db->quoteName('#__associations', 'a2')
+                . ' ON ' . $db->quoteName('a2.key') . ' = ' . $db->quoteName('a1.key')
+                . ' AND ' . $db->quoteName('a2.context') . ' = ' . $db->quoteName('a1.context'))
+            ->join('INNER', $db->quoteName('#__categories', 'cat')
+                . ' ON ' . $db->quoteName('cat.id') . ' = ' . $db->quoteName('a2.id'))
+            ->where($db->quoteName('a1.context') . ' = ' . $db->quote('com_categories.item'))
+            ->where($db->quoteName('a1.id') . ' = ' . self::BLOG_ROOT_CAT_ID)
+            ->where($db->quoteName('cat.language') . ' LIKE ' . $db->quote($lang . '-%'))
+            ->where($db->quoteName('cat.published') . ' = 1');
+        $db->setQuery($query, 0, 1);
+        $id = (int) $db->loadResult();
+
+        return $id > 0 ? $id : self::BLOG_ROOT_CAT_ID;
+    }
+
     /**
      * GET /v1/articles?page=&limit=&category_id=
      * Yayındaki blog makalelerini sayfalı listeler (mobil blog listesi).
@@ -2507,7 +2543,7 @@ class PlgWebservicesNumistr extends CMSPlugin
         try {
             $db = Factory::getDbo();
             $app = Factory::getApplication();
-            $blogCatId = 8; // Blog category ID
+            $blogCatId = $this->blogRootCatId($db); // ?lang=xx; yoksa TR kökü
 
             $page  = max(1, (int)$app->input->get('page', 1));
             $limit = (int)$app->input->get('limit', 20);
@@ -2604,7 +2640,7 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         try {
             $db = Factory::getDbo();
-            $blogCatId = 8; // Blog category ID
+            $blogCatId = $this->blogRootCatId($db); // ?lang=xx; yoksa TR kökü
 
             // Get all subcategories of blog category
             $catQuery = $db->getQuery(true)
@@ -2715,7 +2751,7 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         try {
             $db = Factory::getDbo();
-            $blogCatId = 8; // Blog category ID
+            $blogCatId = $this->blogRootCatId($db); // ?lang=xx; yoksa TR kökü
 
             // Get all subcategories
             $query = $db->getQuery(true)
