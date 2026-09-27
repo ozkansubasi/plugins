@@ -20,6 +20,7 @@ require_once __DIR__ . '/helpers/DatabaseHelper.php';
 require_once __DIR__ . '/helpers/ResponseHelper.php';
 require_once __DIR__ . '/helpers/RateLimiter.php';
 require_once __DIR__ . '/helpers/TickerHelper.php';
+require_once __DIR__ . '/helpers/ConfigParams.php';
 
 // Locations helper (optional - locations feature not fully deployed yet)
 if (file_exists(__DIR__ . '/helpers/LocationsHelper.php')) {
@@ -105,6 +106,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         
         // Config dosyasını yükle
         $this->config = require __DIR__ . '/config/constants.php';
+
+        // Paneldeki "Safe Cap" sabiti ezer (1.16.4; önceden alan hiçbir yere bağlı değildi)
+        $this->config['SAFE_CAP'] = NumisTRConfigParams::safeCap(
+            $this->params->get('safe_cap'),
+            (int) $this->config['SAFE_CAP']
+        );
         
         // Helper'ları başlat
         $this->authHelper = new NumisTRAuthHelper($this->config);
