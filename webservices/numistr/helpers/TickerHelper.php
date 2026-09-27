@@ -12,6 +12,7 @@ defined('_JEXEC') or die;
 
 use Joomla\CMS\Factory;
 use Joomla\CMS\Cache\CacheControllerFactoryInterface;
+use Joomla\CMS\Log\Log;
 
 class NumisTRTickerHelper
 {
@@ -109,9 +110,12 @@ class NumisTRTickerHelper
 
         // Filter by region if specified
         // Check both hyphenated (region-code) and underscored (region_code) field names
+        // fv.item_id varchar, a.id int: CAST olmadan MySQL iki tarafı double'a çevirir ve item_id indeksini
+        // kullanamaz (soğuk önbellekte 3,7–5,3 sn). COLLATE şart: bağlantı utf8mb4_0900_ai_ci, kolon unicode_ci
+        // (numistr.php'deki 2026-08-19 düzeltmesiyle aynı desen).
         if ($regionFilter !== 'all' && $regionFilter !== null && $regionFilter !== '') {
             $query->leftJoin(
-                $this->db->quoteName('#__fields_values', 'fv') . ' ON fv.item_id = a.id'
+                $this->db->quoteName('#__fields_values', 'fv') . ' ON fv.item_id = CAST(a.id AS CHAR) COLLATE utf8mb4_unicode_ci'
             )
             ->leftJoin(
                 $this->db->quoteName('#__fields', 'f') . ' ON f.id = fv.field_id'
@@ -135,10 +139,13 @@ class NumisTRTickerHelper
         try {
             $items = $this->db->loadObjectList();
 
+            // Custom fields for all items in ONE query (was one query per item)
+            $fieldsById = $this->getCustomFieldsFor(array_map(static fn ($item) => (int) $item->id, $items));
+
             // Process items
             $processed = [];
             foreach ($items as $item) {
-                $processed[] = $this->processItem($item, $debug);
+                $processed[] = self::formatItem($item, $fieldsById[(int) $item->id] ?? [], $debug);
             }
 
             // Cache the result
@@ -149,11 +156,7 @@ class NumisTRTickerHelper
             return $processed;
 
         } catch (Exception $e) {
-            Factory::getLog()->add(
-                'Ticker Helper Error: ' . $e->getMessage(),
-                JLog::ERROR,
-                'numistr'
-            );
+            Log::add('Ticker Helper Error: ' . $e->getMessage(), Log::ERROR, 'numistr');
             return [];
         }
     }
@@ -238,19 +241,17 @@ class NumisTRTickerHelper
     }
 
     /**
-     * Process a single ticker item
+     * Format a single ticker item
      * Supports both old format (ancient_name/modern_name) and new format (fact_title/fact_description)
      *
-     * @param   object  $item  Raw item from database
-     * @param   bool    $debug Whether to include debug info
+     * @param   object  $item          Raw item from database
+     * @param   array   $customFields  Custom fields of the item (name => value)
+     * @param   bool    $debug         Whether to include debug info
      *
      * @return  array  Processed item
      */
-    private function processItem($item, $debug = false)
+    public static function formatItem($item, array $customFields, $debug = false)
     {
-        // Get custom fields
-        $customFields = $this->getCustomFields($item->id);
-
         // NEW FORMAT: fact_title and fact_description
         // Check BOTH hyphenated (fact-title) and underscored (fact_title) versions
         // Joomla may store field names with hyphens
@@ -299,37 +300,62 @@ class NumisTRTickerHelper
     }
 
     /**
-     * Get custom fields for an article
+     * Get custom fields for several articles in one query
      *
-     * @param   int  $articleId  Article ID
+     * item_id is varchar: the ids are compared as quoted strings so the item_id index is used
+     * (an int literal forces a full scan of #__fields_values for every article).
      *
-     * @return  array  Custom fields (name => value)
+     * @param   int[]  $articleIds  Article IDs
+     *
+     * @return  array  article id => [name => value]
      */
-    private function getCustomFields($articleId)
+    private function getCustomFieldsFor(array $articleIds)
     {
+        $articleIds = array_values(array_unique(array_filter(array_map('intval', $articleIds))));
+
+        if (!$articleIds) {
+            return [];
+        }
+
+        $in = implode(',', array_map(fn ($id) => $this->db->quote((string) $id), $articleIds));
+
         $query = $this->db->getQuery(true);
 
         $query->select([
+            'fv.item_id',
             'f.name',
             'fv.value'
         ])
         ->from($this->db->quoteName('#__fields_values', 'fv'))
         ->join('INNER', $this->db->quoteName('#__fields', 'f') . ' ON f.id = fv.field_id')
-        ->where('fv.item_id = ' . (int) $articleId)
+        ->where('fv.item_id IN (' . $in . ')')
         ->where('f.context = ' . $this->db->quote('com_content.article'));
 
         $this->db->setQuery($query);
 
         try {
-            $fields = $this->db->loadObjectList('name');
-            $result = [];
-            foreach ($fields as $name => $field) {
-                $result[$name] = $field->value;
-            }
-            return $result;
+            return self::groupCustomFields($this->db->loadObjectList());
         } catch (Exception $e) {
             return [];
         }
+    }
+
+    /**
+     * Group custom field rows by article (a later row with the same name wins, as with loadObjectList('name'))
+     *
+     * @param   object[]  $rows  Rows with item_id, name, value
+     *
+     * @return  array  article id => [name => value]
+     */
+    public static function groupCustomFields(array $rows)
+    {
+        $grouped = [];
+
+        foreach ($rows as $row) {
+            $grouped[(int) $row->item_id][$row->name] = $row->value;
+        }
+
+        return $grouped;
     }
 
     /**
@@ -454,7 +480,7 @@ class NumisTRTickerHelper
         ])
         ->from($this->db->quoteName('#__content', 'a'))
         ->leftJoin(
-            $this->db->quoteName('#__fields_values', 'fv') . ' ON fv.item_id = a.id'
+            $this->db->quoteName('#__fields_values', 'fv') . ' ON fv.item_id = CAST(a.id AS CHAR) COLLATE utf8mb4_unicode_ci'
         )
         ->leftJoin(
             $this->db->quoteName('#__fields', 'f') . ' ON f.id = fv.field_id'

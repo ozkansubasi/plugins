@@ -1025,7 +1025,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'language' => $language,
                 'limit' => $limit,
                 'random' => $random,
-                'cache' => 3600, // 1 hour cache
+                'cache' => 86400, // 24 h: ticker makaleleri nadiren değişir, soğuk önbellek istemcide bekleme demek
                 'debug' => $debug
             ]);
 
