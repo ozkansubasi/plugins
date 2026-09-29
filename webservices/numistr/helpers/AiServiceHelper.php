@@ -223,6 +223,9 @@ class AiServiceHelper
     public function formatResults($aiResults)
     {
         $matches = isset($aiResults['matches']) ? $aiResults['matches'] : array();
+        // AI4 (2026-09-29): hiçbir aday güven eşiğine ulaşmadığında en yakın adaylar ayrıca gelir
+        $nearMatches = isset($aiResults['near_matches']) && is_array($aiResults['near_matches'])
+            ? $aiResults['near_matches'] : array();
 
         // Add thumbnail URLs to matches
         foreach ($matches as &$match) {
@@ -230,6 +233,13 @@ class AiServiceHelper
                 $match['thumbnail_url'] = $this->getThumbnailUrl($match['image_id']);
             }
         }
+        unset($match);
+        foreach ($nearMatches as &$near) {
+            if (isset($near['image_id'])) {
+                $near['thumbnail_url'] = $this->getThumbnailUrl($near['image_id']);
+            }
+        }
+        unset($near);
 
         return array(
             'matches' => $matches,
@@ -239,7 +249,10 @@ class AiServiceHelper
             // Faz A (2026-08-24): nedenli fallback + kalite metrikleri app'e geçsin
             'no_match' => isset($aiResults['no_match']) ? (bool) $aiResults['no_match'] : empty($matches),
             'no_match_reason' => isset($aiResults['no_match_reason']) ? $aiResults['no_match_reason'] : null,
-            'quality' => isset($aiResults['quality']) ? $aiResults['quality'] : null
+            'quality' => isset($aiResults['quality']) ? $aiResults['quality'] : null,
+            // Faz D / AI4 (2026-09-29): yerel doğrulama sonucu + yakın adaylar uygulamaya geçsin
+            'verified' => isset($aiResults['verified']) ? (bool) $aiResults['verified'] : false,
+            'near_matches' => $nearMatches
         );
     }
 
