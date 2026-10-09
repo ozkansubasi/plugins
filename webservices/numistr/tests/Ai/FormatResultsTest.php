@@ -34,3 +34,14 @@ check('eski servis: verified=false, near_matches=[]', $r3['verified'] === false 
 
 $r4 = $h->formatResults(['matches' => [], 'near_matches' => 'bozuk']);
 check('bozuk near_matches -> []', $r4['near_matches'] === []);
+
+// Hedef 2 (2026-10-09, 1.17.0): identification aynen geçer; eski servis / bozuk veri -> null
+$kimlik = ['level' => 'ruler', 'basis' => 'obverse', 'ruler' => ['name' => 'Marcus Aurelius', 'share' => 0.83,
+    'reign_tr' => 'MS 161–180', 'note_tr' => 'Stoacı filozof imparator'], 'ruler_alternatives' => [],
+    'dynasty' => ['id' => 'nerva_antonine'], 'mint' => null, 'date' => ['estimate' => 165, 'from' => 160, 'to' => 170],
+    'reverse' => ['status' => 'unverified', 'candidates' => [['article_id' => 23345, 'title' => 'CN Type 4059', 'score' => 0.31]]]];
+$r5 = $h->formatResults(['matches' => [], 'no_match' => true, 'identification' => $kimlik]);
+check('identification aynen geçer', $r5['identification'] === $kimlik);
+check('eski servis: identification=null', $r3['identification'] === null);
+$r6 = $h->formatResults(['matches' => [], 'identification' => 'bozuk']);
+check('bozuk identification -> null', $r6['identification'] === null);

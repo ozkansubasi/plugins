@@ -252,7 +252,11 @@ class AiServiceHelper
             'quality' => isset($aiResults['quality']) ? $aiResults['quality'] : null,
             // Faz D / AI4 (2026-09-29): yerel doğrulama sonucu + yakın adaylar uygulamaya geçsin
             'verified' => isset($aiResults['verified']) ? (bool) $aiResults['verified'] : false,
-            'near_matches' => $nearMatches
+            'near_matches' => $nearMatches,
+            // Hedef 2 (2026-10-09): tip doğrulanmasa da fotoğrafın söyledikleri (hükümdar / hanedan / darphane /
+            // tarih, ikinci aşamada arka yüz) — servis ne gönderdiyse aynen; yoksa ya da bozuksa null
+            'identification' => isset($aiResults['identification']) && is_array($aiResults['identification'])
+                ? $aiResults['identification'] : null
         );
     }
 
