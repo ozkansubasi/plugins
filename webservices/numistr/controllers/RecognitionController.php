@@ -34,25 +34,35 @@ class RecognitionController
             $configPath = __DIR__ . '/../config/constants.php';
             $config = file_exists($configPath) ? include $configPath : [];
 
-            $authHelper = new NumisTRAuthHelper($config);
-            $user = $authHelper->authenticateUser();
-
-            if (!$user || $user->guest || $user->id <= 0) {
-                self::sendError('Authentication required', 401);
-                return;
-            }
-
-            $result = self::runForUser(
-                $user,
-                isset($_FILES['image']) ? $_FILES['image'] : null,
-                isset($_FILES['reverse']) ? $_FILES['reverse'] : null,
-                array(
-                    'metal'       => isset($_POST['metal']) ? substr(trim((string) $_POST['metal']), 0, 20) : null,
-                    'weight_g'    => isset($_POST['weight_g']) ? substr(trim((string) $_POST['weight_g']), 0, 10) : null,
-                    'diameter_mm' => isset($_POST['diameter_mm']) ? substr(trim((string) $_POST['diameter_mm']), 0, 10) : null,
-                ),
-                $config
+            $imageFile   = isset($_FILES['image']) ? $_FILES['image'] : null;
+            $reverseFile = isset($_FILES['reverse']) ? $_FILES['reverse'] : null;
+            $attrs       = array(
+                'metal'       => isset($_POST['metal']) ? substr(trim((string) $_POST['metal']), 0, 20) : null,
+                'weight_g'    => isset($_POST['weight_g']) ? substr(trim((string) $_POST['weight_g']), 0, 10) : null,
+                'diameter_mm' => isset($_POST['diameter_mm']) ? substr(trim((string) $_POST['diameter_mm']), 0, 10) : null,
             );
+
+            $hasAuthHeader = !empty($_SERVER['HTTP_AUTHORIZATION']);
+            $authHelper    = new NumisTRAuthHelper($config);
+            $user          = $hasAuthHeader ? $authHelper->authenticateUser() : null;
+
+            if ($user && !$user->guest && $user->id > 0) {
+                $result = self::runForUser($user, $imageFile, $reverseFile, $attrs, $config);
+            } else {
+                // M17: belirtec HIC gelmediyse ve kurulum kimligi varsa deneme yolu. Belirtec
+                // gelmis ama gecersizse 401 kalir — istemcinin belirtec yenileme akisi 401'e
+                // dayanir; suresi dolmus oturum sessizce denemeye dusmemeli.
+                $deviceHash = ($hasAuthHeader || !class_exists('AnonTrialHelper'))
+                    ? null
+                    : AnonTrialHelper::deviceHash(isset($_SERVER['HTTP_X_DEVICE_ID']) ? $_SERVER['HTTP_X_DEVICE_ID'] : '');
+
+                if ($deviceHash === null) {
+                    self::sendError('Authentication required', 401);
+                    return;
+                }
+
+                $result = self::runAnonymous($deviceHash, $imageFile, $reverseFile, $attrs, $config);
+            }
 
             if (empty($result['ok'])) {
                 if (isset($result['error']['code']) && $result['error']['code'] === 'QUOTA_EXCEEDED') {
@@ -69,6 +79,10 @@ class RecognitionController
                         'limit'       => $result['rate']['limit'],
                         'retry_after' => $result['rate']['retry_after'],
                     );
+                }
+
+                if (($errorCode === 'TRIAL_EXHAUSTED' || $errorCode === 'TRIAL_UNAVAILABLE') && isset($result['quota'])) {
+                    $extra['quota'] = $result['quota'];
                 }
 
                 self::sendError($result['error']['message'], (int) $result['status'], $errorCode, $extra);
@@ -160,7 +174,122 @@ class RecognitionController
             );
         }
 
-        // 2. Gorsel dogrulama
+        // 2-3. Gorsel dogrulama + AI servis
+        $core = self::validateAndRecognize($user->id, $imageFile, $reverseFile, $attrs);
+
+        if (empty($core['ok'])) {
+            return $core;
+        }
+
+        // 4. Kota tuketimi (yalnizca basarili tanimadan sonra)
+        try {
+            $quotaHelper->consumeScan($user);
+        } catch (RuntimeException $e) {
+            return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
+        }
+
+        $updatedQuotaStatus = $quotaHelper->canScan($user);
+        $formattedResults   = $core['helper']->formatResults($core['ai']);
+
+        // 5. Loglama
+        self::logSuccess($user->id, $core);
+
+        return array(
+            'ok' => true,
+            'status' => 200,
+            'data' => $formattedResults,
+            'quota' => array(
+                'used' => $updatedQuotaStatus['used'],
+                'remaining' => $updatedQuotaStatus['remaining'],
+                'limit' => $updatedQuotaStatus['limit'],
+                'tier' => $updatedQuotaStatus['tier'],
+                'reset_date' => $updatedQuotaStatus['reset_date']
+            ),
+            'request_id' => 'req_' . substr($core['hash'], 0, 16),
+            // Korumanin gercekten OLCULDUGU gorunur olsun (sessizce devre disi
+            // kalmasin): measured=false ise sayim yapilamamis demektir.
+            'rate' => array(
+                'measured' => !empty($rate['measured']),
+                'counts'   => isset($rate['counts']) ? $rate['counts'] : array(),
+                // Istemci "bugun kalan tanima" yazabilsin diye tavanlar da bildirilir.
+                // ADR-005 K2 sonrasi Pro'da "sinirsiz" denmiyor; gercek sinir bu.
+                'limits'   => $quotaHelper->rateLimits(),
+            ),
+            'raw' => $core['ai']
+        );
+    }
+
+    /**
+     * M17 — oturumsuz deneme: kurulum hakki + IP/genel tavan -> ayni cekirdek -> hak tuketimi.
+     * Istek gunlugune user_id = 0 ile yazilir (IP ve genel tavan bu satirlardan sayilir).
+     *
+     * @param   string      $deviceHash   AnonTrialHelper::deviceHash() ciktisi
+     * @param   array|null  $imageFile    $_FILES girdisi (on yuz)
+     * @param   array|null  $reverseFile  $_FILES girdisi (arka yuz, istege bagli)
+     * @param   array       $attrs        metal / weight_g / diameter_mm
+     * @param   array|null  $config       constants.php (verilmezse yuklenir)
+     *
+     * @return  array  runForUser ile ayni bicim; hata kodlari TRIAL_EXHAUSTED / TRIAL_UNAVAILABLE
+     */
+    public static function runAnonymous($deviceHash, $imageFile, $reverseFile, array $attrs = array(), $config = null)
+    {
+        if ($config === null) {
+            $configPath = __DIR__ . '/../config/constants.php';
+            $config = file_exists($configPath) ? include $configPath : [];
+        }
+
+        $trial    = new AnonTrialHelper(null, $config);
+        $used     = $trial->used($deviceHash);
+        $decision = AnonTrialHelper::decide($trial->getSettings(), $used, $trial->counts(AnonTrialHelper::clientIp()));
+
+        if (!$decision['allowed']) {
+            return array(
+                'ok' => false,
+                'status' => 429,
+                'error' => array(
+                    'code' => $decision['code'],
+                    'message' => $decision['code'] === 'TRIAL_EXHAUSTED'
+                        ? 'Free trial scans used up. Sign up for a free account to keep scanning.'
+                        : 'Free trial is not available right now. Sign in to keep scanning.',
+                ),
+                'quota' => $trial->quota($used),
+            );
+        }
+
+        $core = self::validateAndRecognize(0, $imageFile, $reverseFile, $attrs);
+
+        if (empty($core['ok'])) {
+            return $core;
+        }
+
+        try {
+            $trial->consume($deviceHash);
+        } catch (RuntimeException $e) {
+            return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
+        }
+
+        $formattedResults = $core['helper']->formatResults($core['ai']);
+
+        self::logSuccess(0, $core);
+
+        return array(
+            'ok' => true,
+            'status' => 200,
+            'data' => $formattedResults,
+            'quota' => $trial->quota($used + 1),
+            'request_id' => 'req_' . substr($core['hash'], 0, 16),
+            'raw' => $core['ai']
+        );
+    }
+
+    /**
+     * Ortak cekirdek: gorsel dogrulama -> AI servis. Kota ve oturum bilmez; AI hatasi burada
+     * loglanir (kota/hak TUKETILMEZ).
+     *
+     * @return  array  ok=false => status, error ; ok=true => ai, hash, helper
+     */
+    private static function validateAndRecognize($logUserId, $imageFile, $reverseFile, array $attrs)
+    {
         if (empty($imageFile)) {
             return array('ok' => false, 'status' => 400, 'error' => array('code' => 'ERROR', 'message' => 'No image file uploaded'));
         }
@@ -183,62 +312,31 @@ class RecognitionController
 
         $imageHash = $aiHelper->calculateImageHash($imageFile['tmp_name']);
 
-        // 3. AI servis
         try {
             $reversePath = ($reverseFile && $reverseFile['error'] === UPLOAD_ERR_OK) ? $reverseFile['tmp_name'] : null;
             $aiResults = $aiHelper->recognize($imageFile['tmp_name'], $reversePath, $attrs);
         } catch (RuntimeException $e) {
-            // AI servis hatasi -> kota TUKETILMEZ
-            self::logRecognitionRequest($user->id, $imageHash, null, null, null, $e->getMessage());
+            self::logRecognitionRequest($logUserId, $imageHash, null, null, null, $e->getMessage());
 
             return array('ok' => false, 'status' => 503, 'error' => array('code' => 'AI_SERVICE', 'message' => $e->getMessage()));
         }
 
-        // 4. Kota tuketimi (yalnizca basarili tanimadan sonra)
-        try {
-            $quotaHelper->consumeScan($user);
-        } catch (RuntimeException $e) {
-            return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
-        }
+        return array('ok' => true, 'ai' => $aiResults, 'hash' => $imageHash, 'helper' => $aiHelper);
+    }
 
-        $updatedQuotaStatus = $quotaHelper->canScan($user);
-        $formattedResults   = $aiHelper->formatResults($aiResults);
-
-        // 5. Loglama
-        $topMatch = isset($aiResults['matches'][0]) ? $aiResults['matches'][0] : null;
+    private static function logSuccess($userId, array $core)
+    {
+        $aiResults = $core['ai'];
+        $topMatch  = isset($aiResults['matches'][0]) ? $aiResults['matches'][0] : null;
 
         self::logRecognitionRequest(
-            $user->id,
-            $imageHash,
+            $userId,
+            $core['hash'],
             isset($aiResults['processing_time_ms']) ? $aiResults['processing_time_ms'] : 0,
             $topMatch ? $topMatch['article_id'] : null,
             $topMatch ? $topMatch['confidence'] : null,
             null,
             $aiResults
-        );
-
-        return array(
-            'ok' => true,
-            'status' => 200,
-            'data' => $formattedResults,
-            'quota' => array(
-                'used' => $updatedQuotaStatus['used'],
-                'remaining' => $updatedQuotaStatus['remaining'],
-                'limit' => $updatedQuotaStatus['limit'],
-                'tier' => $updatedQuotaStatus['tier'],
-                'reset_date' => $updatedQuotaStatus['reset_date']
-            ),
-            'request_id' => 'req_' . substr($imageHash, 0, 16),
-            // Korumanin gercekten OLCULDUGU gorunur olsun (sessizce devre disi
-            // kalmasin): measured=false ise sayim yapilamamis demektir.
-            'rate' => array(
-                'measured' => !empty($rate['measured']),
-                'counts'   => isset($rate['counts']) ? $rate['counts'] : array(),
-                // Istemci "bugun kalan tanima" yazabilsin diye tavanlar da bildirilir.
-                // ADR-005 K2 sonrasi Pro'da "sinirsiz" denmiyor; gercek sinir bu.
-                'limits'   => $quotaHelper->rateLimits(),
-            ),
-            'raw' => $aiResults
         );
     }
 

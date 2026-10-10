@@ -257,5 +257,15 @@ return [
             'per_hour' => 10,
             'per_day'  => 30,
         ],
+
+        // M17 — oturumsuz deneme hakki (AnonTrialHelper). Kapatma anahtari: 'enabled' => false
+        // (uygulama giris penceresine doner). Kurulum kimligi istemcide uretilir ve
+        // degistirilebilir; asil koruma IP ve genel tavandir. 0 = o tavan kapali.
+        'anonymous' => [
+            'enabled'         => true,
+            'device_limit'    => 3,   // kurulum basina basarili tanima (omur boyu)
+            'ip_per_day'      => 10,  // ayni IP'den 24 saatte oturumsuz istek
+            'global_per_hour' => 60,  // tum oturumsuz istekler, saatte (AI ~4,5 sn CPU/istek)
+        ],
     ],
 ];

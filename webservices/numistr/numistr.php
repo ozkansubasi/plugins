@@ -32,6 +32,9 @@ if (file_exists(__DIR__ . '/helpers/LocationsHelper.php')) {
 if (file_exists(__DIR__ . '/helpers/QuotaHelper.php')) {
     require_once __DIR__ . '/helpers/QuotaHelper.php';
 }
+if (file_exists(__DIR__ . '/helpers/AnonTrialHelper.php')) {
+    require_once __DIR__ . '/helpers/AnonTrialHelper.php';
+}
 if (file_exists(__DIR__ . '/helpers/AiServiceHelper.php')) {
     require_once __DIR__ . '/helpers/AiServiceHelper.php';
 }
@@ -477,6 +480,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== SCAN QUOTA: /v1/user/scan-quota =============
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/scan-quota(?:[/?#;]|$)~', $uri)) {
             $this->handleScanQuota($uri);
+            return;
+        }
+
+        // ===================== ANON TRIAL QUOTA: /v1/anon/scan-quota (M17) ==
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/anon/scan-quota(?:[/?#;]|$)~', $uri)) {
+            $this->handleAnonScanQuota($uri);
             return;
         }
 
@@ -2403,6 +2412,45 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->dbg('recognition-exception', $e->getMessage());
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
         }
+    }
+
+    /**
+     * GET /v1/anon/scan-quota — M17 oturumsuz deneme hakki (X-Device-Id basligi).
+     * Oturum gerekmez; yalnizca okur, hak dusmez. Anahtarlar /v1/user/scan-quota ile ayni
+     * (istemci ayni ayristiriciyi kullanir) + enabled ve tier. Deneme kapaliysa ya da sayim
+     * yapilamiyorsa enabled=false, remaining=0: istemci giris penceresini gosterir.
+     */
+    private function handleAnonScanQuota(string $uri): void
+    {
+        $this->dbg('anon-scan-quota', $uri);
+
+        if (!class_exists('AnonTrialHelper')) {
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Anonymous trial not installed');
+            return;
+        }
+
+        $deviceHash = AnonTrialHelper::deviceHash($_SERVER['HTTP_X_DEVICE_ID'] ?? '');
+
+        if ($deviceHash === null) {
+            $this->responseHelper->sendError(400, 'Bad Request', 'X-Device-Id header required');
+            return;
+        }
+
+        $trial   = new AnonTrialHelper(null, $this->config);
+        $enabled = $trial->getSettings()['enabled'];
+        $used    = $enabled ? $trial->used($deviceHash) : null;
+        $quota   = $trial->quota($used);
+        $usable  = $enabled && $used !== null;
+
+        $this->responseHelper->sendJson([
+            'enabled'    => $usable,
+            'scans_used' => $quota['used'],
+            'scan_limit' => $quota['limit'],
+            'remaining'  => $usable ? $quota['remaining'] : 0,
+            'is_pro'     => false,
+            'reset_date' => null,
+            'tier'       => 'anonymous',
+        ], true);
     }
 
     /**
