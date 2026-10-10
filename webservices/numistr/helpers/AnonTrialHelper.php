@@ -173,6 +173,17 @@ class AnonTrialHelper
     }
 
     /**
+     * Pencere baslangici, UTC 'Y-m-d H:i:s' — istek gunlugu zamanlari Factory::getDate()->toSql()
+     * ile UTC yazilir. SQL'de NOW() KULLANILMAZ: sunucunun MySQL saat dilimi +03 (2026-10-11 olculdu,
+     * @@time_zone = SYSTEM), NOW() - INTERVAL 1 HOUR UTC kayitlarin 2 saat ilerisine dusuyor ve saatlik
+     * pencere hep bos kaliyordu.
+     */
+    public static function windowStart($now, $seconds)
+    {
+        return gmdate('Y-m-d H:i:s', (int) $now - (int) $seconds);
+    }
+
+    /**
      * Son 24 saatte bu IP'den ve son 1 saatte toplam oturumsuz tanima istegi.
      * Istek gunlugunde oturumsuz satirlar user_id = 0'dir; idx_user_timestamp kullanilir.
      * Basarisiz istekler de sayilir (hata dongusuyle tavan delinmesin).
@@ -182,14 +193,15 @@ class AnonTrialHelper
     public function counts($ip)
     {
         try {
-            $db = $this->db();
+            $db  = $this->db();
+            $now = time();
             $db->setQuery(
                 'SELECT'
                 . ' SUM(CASE WHEN ' . $db->quoteName('ip_address') . ' = ' . $db->quote((string) $ip) . ' THEN 1 ELSE 0 END) AS c_ip,'
-                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 HOUR) THEN 1 ELSE 0 END) AS c_global'
+                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= ' . $db->quote(self::windowStart($now, 3600)) . ' THEN 1 ELSE 0 END) AS c_global'
                 . ' FROM ' . $db->quoteName('numistr_recognition_requests')
                 . ' WHERE ' . $db->quoteName('user_id') . ' = 0'
-                . ' AND ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 DAY)'
+                . ' AND ' . $db->quoteName('request_timestamp') . ' >= ' . $db->quote(self::windowStart($now, 86400))
             );
             $row = $db->loadAssoc();
 

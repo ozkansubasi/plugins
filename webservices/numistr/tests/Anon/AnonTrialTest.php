@@ -85,3 +85,25 @@ $q = $t->quota(1);
 check('kota ozeti: 1 kullanildi -> 2 kaldi / 3', $q['used'] === 1 && $q['remaining'] === 2 && $q['limit'] === 3 && $q['tier'] === 'anonymous');
 check('kota ozeti: olculemediyse kalan 0', $t->quota(null)['remaining'] === 0);
 check('kota ozeti: fazla kullanim eksiye dusmez', $t->quota(7)['remaining'] === 0);
+
+// ------------------------------------------------ pencere (saat dilimi) ---
+// 2026-10-11 canlida olculdu: MySQL @@time_zone = SYSTEM (+03), istek gunlugu UTC yaziliyor.
+// NOW() - INTERVAL 1 HOUR kayitlarin 2 saat ilerisine dustugu icin saatlik pencere hep bostu.
+$t0 = strtotime('2026-10-11 01:00:00 UTC');
+check('saatlik pencere UTC hesaplanir', $H::windowStart($t0, 3600) === '2026-10-11 00:00:00');
+check('gunluk pencere UTC hesaplanir', $H::windowStart($t0, 86400) === '2026-10-10 01:00:00');
+
+$fakeDb = new class {
+    public $sql = '';
+    public function quoteName($n) { return '`' . $n . '`'; }
+    public function quote($v) { return "'" . addslashes((string) $v) . "'"; }
+    public function setQuery($q) { $this->sql = (string) $q; return $this; }
+    public function loadAssoc() { return ['c_ip' => '2', 'c_global' => '5']; }
+};
+$tz = new AnonTrialHelper($fakeDb, ['QUOTA' => ['anonymous' => ['enabled' => true]]]);
+$cnt = $tz->counts('203.0.113.7');
+check('sayim sonucu okunur', $cnt === ['ip_day' => 2, 'global_hour' => 5]);
+check("sayim SQL'inde NOW() yok", stripos($fakeDb->sql, 'NOW(') === false, $fakeDb->sql);
+check("sayim SQL'i UTC gunluk siniri kullanir", strpos($fakeDb->sql, "'" . gmdate('Y-m-d H', time() - 86400)) !== false);
+check("sayim SQL'i yalniz oturumsuz satirlari sayar", strpos($fakeDb->sql, '`user_id` = 0') !== false);
+check("IP SQL'e tirnakli gecer", strpos($fakeDb->sql, "'203.0.113.7'") !== false);
