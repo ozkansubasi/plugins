@@ -390,6 +390,42 @@ $r  = $mk($http, $st)->run($claims, $now);
 check('Joomla hesabı yok ama kimlik satırı var → DB temizlenir, User::delete çağrılmaz, 200',
     $r['status'] === 200 && $st->called('purge') && !$st->called('joomla') && $r['body']['web_subscription_canceled'] === null);
 
+// ------------------------------------------------------------- site yolu: runForUserId ---
+// (Bu sürümde çağıran yok; "Hesabım" düğmesi için hazır. Oturum + CSRF çağıranın sorumluluğunda.)
+[$http, $log] = $makeHttp([]);
+$st = $makeStore([]);
+check('user_id: 0 → 401, hiçbir çağrı yok', $mk($http, $st)->runForUserId(0, $now)['status'] === 401 && count($log) === 0 && $st->calls === []);
+
+$seen = [];
+$deny = function ($group, $key, $window, $max) use (&$seen) { $seen = [$group, $key]; return false; };
+[$http, $log] = $makeHttp([]);
+$r = $mk($http, $makeStore(['user' => $regular]), $deny)->runForUserId(5, $now);
+check('user_id: kişi başı tavan (anahtar özet: uid:5)', $r['status'] === 429 && $seen === ['numistr_user_delete', 'h_' . hash('sha256', 'uid:5')] && count($log) === 0);
+
+[$http, $log] = $makeHttp([$tok('T'), ['status' => 204, 'body' => ''], ['status' => 404, 'body' => '']]);
+$st = $makeStore(['user' => $regular, 'identities' => [['subject' => 'google-oauth2|1', 'email' => 'ali@ornek.com'], ['subject' => 'apple|2', 'email' => '']]]);
+$r  = $mk($http, $st)->runForUserId(5, $now);
+check('user_id: identities\'teki TÜM sub\'lar Auth0\'da silinir → DB → Joomla → 200',
+    $r['status'] === 200 && $r['body']['auth0_users_deleted'] === 1
+    && $log[1]['url'] === 'https://tenant.example/api/v2/users/google-oauth2%7C1' && $log[2]['url'] === 'https://tenant.example/api/v2/users/apple%7C2'
+    && $st->arg('purge') === [5, ['google-oauth2|1', 'apple|2'], ['ali@ornek.com']] && $st->called('joomla') && !$st->called('bySub'));
+check('user_id: günlükte via=session', strpos($r['log'], 'via=session') !== false);
+
+[$http, $log] = $makeHttp([]);
+$st = $makeStore(['user' => $regular, 'identities' => []]);
+$r  = (new AccountDeletionHelper(['AUTH0' => []], new Auth0ManagementClient([], $http), $allow, $st))->runForUserId(5, $now);
+check('user_id: Auth0 kimliği olmayan site hesabı M2M olmadan da silinir', $r['status'] === 200 && count($log) === 0 && $st->called('purge') && $st->called('joomla'));
+
+[$http, $log] = $makeHttp([]);
+$st = $makeStore(['user' => $regular, 'identities' => [['subject' => 'auth0|x', 'email' => '']]]);
+$r  = (new AccountDeletionHelper(['AUTH0' => []], new Auth0ManagementClient([], $http), $allow, $st))->runForUserId(5, $now);
+check('user_id: Auth0 kimliği var ama M2M yok → 503, DB\'ye dokunulmaz', $r['status'] === 503 && !$st->called('purge') && !$st->called('joomla'));
+
+[$http, $log] = $makeHttp([]);
+$st = $makeStore(['user' => ['id' => 1, 'email' => 'a@b.co', 'groups' => [1, 8], 'can_admin' => true], 'identities' => [['subject' => 'auth0|admin', 'email' => '']]]);
+$r  = $mk($http, $st)->runForUserId(1, $now);
+check('user_id: Super User → 403, hiçbir şey silinmez', $r['status'] === 403 && count($log) === 0 && !$st->called('purge'));
+
 // ------------------------------------------------------------- kaynak denetimi ---
 $main = (string) file_get_contents($root . '/numistr.php');
 $s    = strpos($main, 'private function handleUserDelete(');

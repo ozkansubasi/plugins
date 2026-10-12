@@ -18,6 +18,9 @@ use Joomla\CMS\Factory;
  * mağaza (RevenueCat) olayları silinmez, KİMLİKSİZLEŞTİRİLİR · iyzico olayları ve numistr_subscriptions yasal saklama
  * için kalır · silip yeniden açanın aylık kotası sıfırlanır (kabul).
  *
+ * Giriş: run($claims) (REST API, doğrulanmış `sub`) · runForUserId($userId) (ileride site "Hesabım"; oturum + CSRF
+ * çağıranda). İkisi de aynı çekirdekte (complete()) biter, aynı sonuç dizisini döner.
+ *
  * Sıra (önemli):
  *   1. Kimlik yalnız imzası doğrulanmış ID token'dan (`sub`); gövdeden kullanıcı ALINMAZ.
  *   2. Kişi başına saatte 3 (sha256(sub) anahtarı) — çağıran ayrıca kaba IP sınırı uygular.
@@ -352,6 +355,12 @@ class AccountDeletionHelper
     }
 
     // ==================================================================== uçtan uca ===
+    //
+    // İki giriş, tek çekirdek (complete()):
+    //   run($claims)          — REST API (POST /v1/user/delete): kimlik = imzası doğrulanmış Auth0 `sub`.
+    //   runForUserId($userId) — ileride sitedeki "Hesabım" düğmesi: kimlik = Joomla oturumu; oturumu ve CSRF'i
+    //                           ÇAĞIRAN doğrular. sub'lar numistr_auth_identities'ten bulunur.
+    // Dönüş ikisinde de aynı: ['status','code','body','retry_after','log','error'].
 
     /**
      * @param   array|null  $claims  İmzası doğrulanmış ID token yükü; null = doğrulanamadı
@@ -401,14 +410,72 @@ class AccountDeletionHelper
             return $this->result(500, 'DELETE_FAILED', $log);
         }
 
+        return $this->complete((int) $uid, $user, $identities, $sub, $log, $now);
+    }
+
+    /**
+     * Joomla kullanıcı kimliğiyle silme (site "Hesabım" yolu için hazır; bu sürümde çağıran yok).
+     * ÇAĞIRAN SORUMLU: geçerli Joomla oturumu (kullanıcı yalnız KENDİ id'si) + CSRF (Session::checkToken) + onay.
+     * Hesabın Auth0 subject'leri numistr_auth_identities'ten bulunur; hiç yoksa Auth0 adımı atlanır.
+     *
+     * @param   int       $userId
+     * @param   int|null  $now
+     *
+     * @return  array  run() ile aynı biçim
+     */
+    public function runForUserId($userId, $now = null)
+    {
+        $now = $now === null ? time() : (int) $now;
+        $uid = (int) $userId;
+        $log = array('uid' => $uid, 'via' => 'session');
+
+        if ($uid <= 0) {
+            return $this->result(401, 'UNAUTHORIZED', $log);
+        }
+
+        foreach (self::limitPlan('uid:' . $uid, $now, $this->settings['per_hour']) as $w) {
+            if ($w['max'] > 0 && !call_user_func($this->limiter, self::LIMIT_GROUP, $w['key'], $w['window'], $w['max'])) {
+                return $this->result(429, 'RATE_LIMITED', $log, $w['retry_after']);
+            }
+        }
+
+        try {
+            $user       = $this->store->loadUser($uid);
+            $identities = $this->store->identities($uid);
+        } catch (\Throwable $e) {
+            $log['step'] = 'lookup';
+            $log['err']  = $e->getMessage();
+
+            return $this->result(500, 'DELETE_FAILED', $log);
+        }
+
+        return $this->complete($uid, $user, $identities, '', $log, $now);
+    }
+
+    /**
+     * Ortak çekirdek: hesap bulunduktan sonraki her şey (koruma → Auth0 → DB → dosyalar → Joomla).
+     *
+     * @param   int         $uid         0 = Joomla hesabı yok
+     * @param   array|null  $user        AccountDeletionStoreInterface::loadUser()
+     * @param   array       $identities  [['subject','email'], ...]
+     * @param   string      $requester   İsteyen sub (API) — Auth0'da EN SON silinir; site yolunda ''
+     */
+    private function complete($uid, $user, array $identities, $requester, array $log, $now)
+    {
         $log['uid'] = (int) $uid;
 
         if ($user !== null && self::isProtected((array) $user['groups'], !empty($user['can_admin']), $this->settings['protected_groups'])) {
             return $this->result(403, 'ACCOUNT_PROTECTED', $log);
         }
 
-        $subjects = self::orderSubjects(array_merge(array_column($identities, 'subject'), array($sub)), $sub);
-        $subRef   = $uid > 0 ? $this->store->activeWebSubscription($uid) : null;
+        $all      = array_column($identities, 'subject');
+        $subjects = self::orderSubjects($requester !== '' ? array_merge($all, array($requester)) : $all, $requester);
+
+        if ($subjects && !$this->mgmt->isConfigured()) {
+            return $this->result(503, 'DELETE_UNAVAILABLE', $log);
+        }
+
+        $subRef = $uid > 0 ? $this->store->activeWebSubscription($uid) : null;
 
         $log['subjects']     = count($subjects);
         $log['web_sub']      = $subRef !== null ? 'active' : 'none';
