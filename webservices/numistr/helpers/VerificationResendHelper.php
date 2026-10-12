@@ -9,7 +9,11 @@
 
 defined('_JEXEC') or die;
 
-use Joomla\CMS\Factory;
+// 1.20.0: M2M belirteç kodu ortak istemcide (hesap silme de kullanıyor). numistr.php bunu önce yükler;
+// burada da güvenli yükleme (dosya yoksa uç 503 döner, API düşmez — 2026-07-08 dersi).
+if (!class_exists('Auth0ManagementClient') && file_exists(__DIR__ . '/Auth0ManagementClient.php')) {
+    require_once __DIR__ . '/Auth0ManagementClient.php';
+}
 
 /**
  * A23 — e-posta doğrulama iletisini yeniden gönder (POST /v1/auth/resend-verification).
@@ -28,43 +32,42 @@ use Joomla\CMS\Factory;
  *    M2M belirteç kotasını korur). Sayaç denemede artar (Auth0'ya giden her istek sayılır).
  *  - M2M belirteci Joomla önbelleğinde tutulur (dosya önbelleği `die()` önekiyle yazılır,
  *    web'den okunamaz); süresinden 60 sn önce yenilenir. Sır yalnız secrets.php'de.
+ *    1.20.0: belirteç/HTTP/önbellek kodu Auth0ManagementClient'a taşındı (anahtar ve davranış aynı).
  *
  * @since  1.19.0
  */
 class VerificationResendHelper
 {
-    const CACHE_GROUP = 'numistr_auth0_mgmt';
+    const CACHE_GROUP = 'numistr_auth0_mgmt'; // = Auth0ManagementClient::CACHE_GROUP (geriye uyumluluk)
     const LIMIT_GROUP = 'numistr_resend';
 
     /** @var array */
     private $settings;
 
-    /** @var callable  function(string $method, string $url, array $headers, ?string $body): array{status:int,body:string} */
-    private $http;
+    /** @var Auth0ManagementClient */
+    private $mgmt;
 
     /** @var callable  function(string $group, string $key, string $window, int $max): bool */
     private $limiter;
 
-    /** @var callable  function(string $key): mixed */
-    private $storeGet;
-
-    /** @var callable  function(string $key, mixed $value): void */
-    private $storeSet;
-
     /** @var string */
     private $lastError = '';
 
+    /**
+     * @param   callable|null  $http      function(string $method, string $url, array $headers, ?string $body): array{status:int,body:string}
+     * @param   callable|null  $limiter   function(string $group, string $key, string $window, int $max): bool
+     * @param   callable|null  $storeGet  function(string $key): mixed
+     * @param   callable|null  $storeSet  function(string $key, mixed $value): void
+     */
     public function __construct(array $config, ?callable $http = null, ?callable $limiter = null, ?callable $storeGet = null, ?callable $storeSet = null)
     {
         $this->settings = self::settings($config);
-        $this->http     = $http ?: array($this, 'curlRequest');
+        $this->mgmt     = new Auth0ManagementClient(Auth0ManagementClient::settings($config), $http, $storeGet, $storeSet);
         $this->limiter  = $limiter ?: function ($group, $key, $window, $max) use ($config) {
             $rl = new NumisTRRateLimiter($config);
 
             return $rl->checkWindowLimit($group, $key, $window, $max);
         };
-        $this->storeGet = $storeGet ?: array($this, 'cacheGet');
-        $this->storeSet = $storeSet ?: array($this, 'cacheSet');
     }
 
     /**
@@ -159,21 +162,22 @@ class VerificationResendHelper
             }
         }
 
-        $token = $this->managementToken($now);
+        $token = $this->mgmt->token($now);
 
         if ($token === null) {
+            $this->lastError = $this->mgmt->getLastError();
+
             return $this->result(502, 'RESEND_FAILED', array('sent' => false));
         }
 
-        $res = call_user_func(
-            $this->http,
+        $res = $this->mgmt->call(
             'POST',
-            'https://' . $this->settings['domain'] . '/api/v2/jobs/verification-email',
-            array('Authorization: Bearer ' . $token, 'Content-Type: application/json', 'Accept: application/json'),
+            '/api/v2/jobs/verification-email',
+            $token,
             json_encode(array('user_id' => $claims['sub'], 'client_id' => $this->settings['verify_client_id']))
         );
 
-        $status = (int) ($res['status'] ?? 0);
+        $status = $res['status'];
 
         if ($status === 201 || $status === 200) {
             $retry = (int) $this->settings['per_minute'] > 0 ? 60 : 0;
@@ -183,7 +187,7 @@ class VerificationResendHelper
 
         if ($status === 401 || $status === 403) {
             // Belirteç iptal edilmiş / yetkisi değişmiş olabilir: bir dahaki istek yenisini alsın.
-            call_user_func($this->storeSet, $this->tokenKey(), null);
+            $this->mgmt->forgetToken();
         }
 
         $this->lastError = 'jobs/verification-email http=' . $status . ' ' . substr((string) ($res['body'] ?? ''), 0, 200);
@@ -206,51 +210,6 @@ class VerificationResendHelper
         return $this->lastError;
     }
 
-    /**
-     * Management API belirteci (client_credentials). Önbellekte geçerliyse ağ isteği yok.
-     */
-    private function managementToken($now)
-    {
-        $key    = $this->tokenKey();
-        $cached = call_user_func($this->storeGet, $key);
-
-        if (is_array($cached) && !empty($cached['t']) && (int) ($cached['exp'] ?? 0) > $now + 60) {
-            return (string) $cached['t'];
-        }
-
-        $res = call_user_func(
-            $this->http,
-            'POST',
-            'https://' . $this->settings['domain'] . '/oauth/token',
-            array('Content-Type: application/json', 'Accept: application/json'),
-            json_encode(array(
-                'grant_type'    => 'client_credentials',
-                'client_id'     => $this->settings['client_id'],
-                'client_secret' => $this->settings['client_secret'],
-                'audience'      => 'https://' . $this->settings['domain'] . '/api/v2/',
-            ))
-        );
-
-        $data = json_decode((string) ($res['body'] ?? ''), true);
-
-        if ((int) ($res['status'] ?? 0) !== 200 || !is_array($data) || empty($data['access_token'])) {
-            // Yanıt gövdesi sır içermez (hata metni); yine de kısaltılır.
-            $this->lastError = 'oauth/token http=' . (int) ($res['status'] ?? 0) . ' ' . substr((string) ($res['body'] ?? ''), 0, 200);
-
-            return null;
-        }
-
-        $ttl = isset($data['expires_in']) ? max(0, (int) $data['expires_in']) : 3600;
-        call_user_func($this->storeSet, $key, array('t' => (string) $data['access_token'], 'exp' => $now + $ttl));
-
-        return (string) $data['access_token'];
-    }
-
-    private function tokenKey()
-    {
-        return 'tok_' . sha1($this->settings['domain'] . '|' . $this->settings['client_id']);
-    }
-
     private function result($status, $code, array $body, $retryAfter = 0)
     {
         if ($code !== '') {
@@ -262,70 +221,5 @@ class VerificationResendHelper
         }
 
         return array('status' => (int) $status, 'code' => $code, 'body' => $body, 'retry_after' => (int) $retryAfter);
-    }
-
-    // ------------------------------------------------------------ varsayılan G/Ç ---
-
-    /** @internal varsayılan HTTP istemcisi */
-    public function curlRequest($method, $url, array $headers, $body)
-    {
-        try {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, array(
-                CURLOPT_CUSTOMREQUEST  => $method,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_POSTFIELDS     => $body,
-                CURLOPT_HTTPHEADER     => $headers,
-                CURLOPT_TIMEOUT        => 10,
-                CURLOPT_CONNECTTIMEOUT => 5,
-                CURLOPT_SSL_VERIFYPEER => true,
-                CURLOPT_SSL_VERIFYHOST => 2,
-                CURLOPT_FOLLOWLOCATION => false,
-            ));
-            $raw    = curl_exec($ch);
-            $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            $err    = curl_error($ch);
-            curl_close($ch);
-
-            return array('status' => $raw === false ? 0 : $status, 'body' => $raw === false ? $err : (string) $raw);
-        } catch (\Throwable $e) {
-            return array('status' => 0, 'body' => $e->getMessage());
-        }
-    }
-
-    /** @internal */
-    public function cacheGet($key)
-    {
-        try {
-            return $this->cacheController()->get($key);
-        } catch (\Throwable $e) {
-            return null;
-        }
-    }
-
-    /** @internal */
-    public function cacheSet($key, $value)
-    {
-        try {
-            $cache = $this->cacheController();
-
-            if ($value === null) {
-                $cache->remove($key);
-            } else {
-                $cache->store($value, $key);
-            }
-        } catch (\Throwable $e) {
-            // önbellek yoksa her istekte yeni belirteç alınır; tavanlar bunu sınırlar
-        }
-    }
-
-    /** RateLimiter::cacheController ile aynı gerekçe: sitenin önbellek ayarından bağımsız. */
-    private function cacheController()
-    {
-        $options = array('defaultgroup' => self::CACHE_GROUP, 'caching' => true, 'lifetime' => 1440);
-
-        return Factory::getContainer()
-            ->get(\Joomla\CMS\Cache\CacheControllerFactoryInterface::class)
-            ->createCacheController('output', $options);
     }
 }
