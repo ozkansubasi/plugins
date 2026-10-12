@@ -285,9 +285,33 @@ class QuotaHelper
         $cfg = isset($this->config['QUOTA']['rate_limits']) ? (array) $this->config['QUOTA']['rate_limits'] : array();
 
         return array(
-            'burst' => isset($cfg['per_2min']) ? (int) $cfg['per_2min'] : 1,
+            'burst' => isset($cfg['per_2min']) ? (int) $cfg['per_2min'] : 3,
             'hour'  => isset($cfg['per_hour']) ? (int) $cfg['per_hour'] : 10,
             'day'   => isset($cfg['per_day'])  ? (int) $cfg['per_day']  : 30,
+        );
+    }
+
+    /**
+     * Pencere baslangiclari, UTC 'Y-m-d H:i:s'. Istek gunlugu zamanlari
+     * Factory::getDate()->toSql() ile UTC yazilir; SQL'de NOW() KULLANILMAZ.
+     *
+     * 🔴 A20 (2026-10-11 olculdu): sunucunun MySQL saat dilimi +03 (@@time_zone = SYSTEM).
+     * NOW() - INTERVAL 120 SECOND UTC kayitlarin ~3 saat ilerisine dustugu icin 2 dakika ve
+     * 1 saat pencereleri hep bos, gunluk pencere 21 saat kaliyordu — tavanlar fiilen kapaliydi
+     * (ayni kullanicinin 24 sn arayla iki basarili taramasi). AnonTrialHelper::windowStart ile ayni yontem.
+     *
+     * @param   int  $now  Unix zaman damgasi
+     *
+     * @return  array  ['burst'=>string,'hour'=>string,'day'=>string]
+     */
+    public static function windowStarts($now)
+    {
+        $now = (int) $now;
+
+        return array(
+            'burst' => gmdate('Y-m-d H:i:s', $now - 120),
+            'hour'  => gmdate('Y-m-d H:i:s', $now - 3600),
+            'day'   => gmdate('Y-m-d H:i:s', $now - 86400),
         );
     }
 
@@ -304,16 +328,17 @@ class QuotaHelper
         }
 
         try {
-            $db = $this->db !== null ? $this->db : Factory::getDbo();
+            $db    = $this->db !== null ? $this->db : Factory::getDbo();
+            $start = self::windowStarts(time());
 
             $db->setQuery(
                 'SELECT'
-                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 120 SECOND) THEN 1 ELSE 0 END) AS c_burst,'
-                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 HOUR) THEN 1 ELSE 0 END) AS c_hour,'
+                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= ' . $db->quote($start['burst']) . ' THEN 1 ELSE 0 END) AS c_burst,'
+                . ' SUM(CASE WHEN ' . $db->quoteName('request_timestamp') . ' >= ' . $db->quote($start['hour']) . ' THEN 1 ELSE 0 END) AS c_hour,'
                 . ' COUNT(*) AS c_day'
                 . ' FROM ' . $db->quoteName('numistr_recognition_requests')
                 . ' WHERE ' . $db->quoteName('user_id') . ' = ' . (int) $userId
-                . ' AND ' . $db->quoteName('request_timestamp') . ' >= (NOW() - INTERVAL 1 DAY)'
+                . ' AND ' . $db->quoteName('request_timestamp') . ' >= ' . $db->quote($start['day'])
             );
 
             $row = $db->loadAssoc();

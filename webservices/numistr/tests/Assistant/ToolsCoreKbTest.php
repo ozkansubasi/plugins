@@ -103,14 +103,16 @@ check('EN KB mentions web purchase channel', stripos($en['text'], 'iyzico') !== 
 // Adil kullanim esikleri de bayatlamasin: asistan ziyaretciye yanlis sinir soylemesin.
 // Esikler `config/constants.php` -> QUOTA.rate_limits ile AYNI olmali (asagida ayrica
 // dogrulaniyor); burada cekirdek KB metninin onlari dogru yazdigi kontrol ediliyor.
-check('TR KB has current fair-use thresholds (2 dk 1 / 10 / 30)',
-    strpos($tr['text'], 'iki dakikada 1') !== false
+check('TR KB has current fair-use thresholds (2 dk 3 / 10 / 30 — A20)',
+    strpos($tr['text'], 'iki dakikada 3') !== false
+    && strpos($tr['text'], 'iki dakikada 1') === false
     && strpos($tr['text'], 'saatte 10') !== false
     && strpos($tr['text'], 'günde 30') !== false);
 check('TR KB has no stale fair-use thresholds',
     strpos($tr['text'], 'dakikada 6') === false && strpos($tr['text'], 'günde 100') === false);
-check('EN KB has current fair-use thresholds',
-    strpos($en['text'], '1 every two minutes') !== false
+check('EN KB has current fair-use thresholds (3 every two minutes — A20)',
+    strpos($en['text'], '3 every two minutes') !== false
+    && strpos($en['text'], '1 every two minutes') === false
     && strpos($en['text'], '10 per hour') !== false
     && strpos($en['text'], '30 per day') !== false);
 check('EN KB has no stale fair-use thresholds',
@@ -208,8 +210,15 @@ check('rate: en dar pencere once bildirilir', $d['scope'] === 'burst');
 // Yapilandirmadan okunan degerler metinlerde yazan esiklerle ayni olmali (bayatlama korumasi).
 $constants = require $root . '/config/constants.php';
 $cfgRl = $constants['QUOTA']['rate_limits'];
-check('constants: adil kullanim esikleri 1 / 10 / 30',
-    (int) $cfgRl['per_2min'] === 1 && (int) $cfgRl['per_hour'] === 10 && (int) $cfgRl['per_day'] === 30);
+check('constants: adil kullanim esikleri 3 / 10 / 30 (A20, 2026-10-12)',
+    (int) $cfgRl['per_2min'] === 3 && (int) $cfgRl['per_hour'] === 10 && (int) $cfgRl['per_day'] === 30);
+// A20: pencereler UTC; MySQL NOW() (+03) kullanilirsa 2 dk / 1 saat pencereleri hic dolmaz.
+$ws = QuotaHelper::windowStarts(1791760437); // 2026-10-12 02:13:57 TR = 2026-10-11 23:13:57 UTC
+check('A20: 2 dakika penceresi UTC hesaplanir', $ws['burst'] === '2026-10-11 23:11:57');
+check('A20: saat penceresi UTC hesaplanir', $ws['hour'] === '2026-10-11 22:13:57');
+check('A20: gun penceresi UTC hesaplanir (21 saat degil 24)', $ws['day'] === '2026-10-10 23:13:57');
+$quotaSrc = (string) file_get_contents($root . '/helpers/QuotaHelper.php');
+check('A20: tavan sorgusunda SQL NOW() penceresi yok', strpos($quotaSrc, '(NOW()') === false);
 // assistant.php (keyword_map + hazir mesajlar) da bayatlamasin. 2026-08-30'da tam bu
 // dosya atlanmisti: cekirdek KB guncellenirken burada "gunde 100" kalmisti — dosya
 // Turkce karakterleri ASCII yaziyor ('gunde'), bu yuzden 'günde' aramasina takilmadi.

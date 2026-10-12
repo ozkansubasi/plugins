@@ -253,7 +253,10 @@ return [
             // Bir taramanin gercek temposu ~2-3 dakikadir (fotograf cekimi/secimi,
             // yukleme, sonucun degerlendirilmesi). Esikler bu tempoya gore secildi:
             // olagan kullanimda karsilasilmaz, betikli kullanim ise hemen durur.
-            'per_2min' => 1,
+            // A20 (2026-10-12, kullanici karari): 2 dakikada 1 → 3. 1.19.0'a kadar pencereler
+            // saat dilimi hatasi yuzunden hic calismiyordu; gercek kullanimda bulanik cekimi hemen
+            // yeniden cekme goruldu — 1 bunu keserdi, 3 betikli kullanimi yine durdurur.
+            'per_2min' => 3,
             'per_hour' => 10,
             'per_day'  => 30,
         ],
