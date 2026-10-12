@@ -23,7 +23,7 @@ $body = function (string $name) use ($src): string {
     return substr($src, $start, $next === false ? null : $next - $start);
 };
 
-foreach (['handleUserProfile', 'handleUserSubscription', 'handleScanQuota', 'handleAnonScanQuota'] as $name) {
+foreach (['handleUserProfile', 'handleUserSubscription', 'handleScanQuota', 'handleAnonScanQuota', 'handleUserDelete'] as $name) {
     $b = $body($name);
     check('A21: ' . $name . ' yanıtı no-store',
         $b !== '' && preg_match('/sendJson\(\s*(\$payload|\[)/', $b) === 1 && preg_match('/sendJson\([^;]*,\s*true\)\s*;/s', $b) === 1);

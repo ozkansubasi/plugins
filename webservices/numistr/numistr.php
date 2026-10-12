@@ -35,8 +35,16 @@ if (file_exists(__DIR__ . '/helpers/QuotaHelper.php')) {
 if (file_exists(__DIR__ . '/helpers/AnonTrialHelper.php')) {
     require_once __DIR__ . '/helpers/AnonTrialHelper.php';
 }
+// Auth0 Management API istemcisi (1.20.0) — VerificationResendHelper ve AccountDeletionHelper'dan ÖNCE.
+if (file_exists(__DIR__ . '/helpers/Auth0ManagementClient.php')) {
+    require_once __DIR__ . '/helpers/Auth0ManagementClient.php';
+}
 if (file_exists(__DIR__ . '/helpers/VerificationResendHelper.php')) {
     require_once __DIR__ . '/helpers/VerificationResendHelper.php';
+}
+// Hesap silme (1.20.0) — Auth0ManagementClient olmadan yüklenmez (kısmi deploy /v1'i düşürmesin).
+if (class_exists('Auth0ManagementClient') && file_exists(__DIR__ . '/helpers/AccountDeletionHelper.php')) {
+    require_once __DIR__ . '/helpers/AccountDeletionHelper.php';
 }
 if (file_exists(__DIR__ . '/helpers/AiServiceHelper.php')) {
     require_once __DIR__ . '/helpers/AiServiceHelper.php';
@@ -185,7 +193,11 @@ class PlgWebservicesNumistr extends CMSPlugin
         return 'ip:' . sha1($_SERVER['REMOTE_ADDR'] ?? '');
     }
 
-    private function checkRateLimit(string $endpoint, int $maxRequests = null): void
+    /**
+     * @param string $errorCode Verilirse 429 gövdesine error_code + retry_after eklenir (1.20.0; ör. RATE_LIMITED).
+     *                          Boşsa yanıt eskisiyle birebir aynı.
+     */
+    private function checkRateLimit(string $endpoint, ?int $maxRequests = null, string $errorCode = ''): void
     {
         if ($maxRequests === null) {
             $maxRequests = $this->config['RATE_LIMITS']['default'] ?? 60;
@@ -200,7 +212,8 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendError(
                 429,
                 'Too Many Requests',
-                'Daily request limit reached (' . $dailyMax . '). Bulk extraction is not permitted; see the terms of use.'
+                'Daily request limit reached (' . $dailyMax . '). Bulk extraction is not permitted; see the terms of use.',
+                $errorCode !== '' ? ['error_code' => $errorCode, 'retry_after' => 86400 - (time() % 86400)] : []
             );
             exit;
         }
@@ -210,7 +223,8 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendError(
                 429,
                 'Too Many Requests',
-                'Rate limit exceeded. Please try again later. Limit: ' . $maxRequests . '/minute'
+                'Rate limit exceeded. Please try again later. Limit: ' . $maxRequests . '/minute',
+                $errorCode !== '' ? ['error_code' => $errorCode, 'retry_after' => 60 - (time() % 60)] : []
             );
             exit;
         }
@@ -418,6 +432,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== USER SUBSCRIPTION: /v1/user/subscription ====
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/subscription(?:[/?#;]|$)~', $uri)) {
             $this->handleUserSubscription($uri);
+            return;
+        }
+
+        // ===================== USER DELETE: POST /v1/user/delete (1.20.0) ==
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/delete(?:[/?#;]|$)~', $uri)) {
+            $this->handleUserDelete($uri);
             return;
         }
 
@@ -2490,7 +2510,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             return;
         }
 
-        if (!class_exists('VerificationResendHelper') || !class_exists('NumisTRJwtVerifier')) {
+        if (!class_exists('VerificationResendHelper') || !class_exists('Auth0ManagementClient') || !class_exists('NumisTRJwtVerifier')) {
             $this->responseHelper->sendError(503, 'Service Unavailable', 'Resend not installed', ['error_code' => 'RESEND_UNAVAILABLE']);
             return;
         }
@@ -2523,6 +2543,78 @@ class PlgWebservicesNumistr extends CMSPlugin
         }
 
         $titles = [400 => 'Bad Request', 401 => 'Unauthorized', 429 => 'Too Many Requests', 502 => 'Bad Gateway', 503 => 'Service Unavailable'];
+
+        $this->responseHelper->sendError(
+            $res['status'],
+            $titles[$res['status']] ?? 'Error',
+            null,
+            ['error_code' => $res['code'], 'retry_after' => $res['retry_after']]
+        );
+    }
+
+    /**
+     * POST /v1/user/delete — 1.20.0: uygulama içi hesap silme (App Store 5.1.1(v)). Silme HEMEN yapılır.
+     *
+     * Gövde `{"confirm": true}`. Kimlik YALNIZ `Authorization: Bearer <Auth0 ID token>`; imza her zaman doğrulanır.
+     * requireAuth() kullanılmaz: o yol hesap açar ve doğrulanmamış e-postada 401 verir — doğrulanmamış `auth0|`
+     * kullanıcısı da (Joomla hesabı olmadan) silinebilmeli. Akış ve sıra: AccountDeletionHelper.
+     *
+     * Yanıtlar: 200 {data:{deleted:true, auth0_users_deleted:int, web_subscription_canceled:bool|null}} (no-store) ·
+     * 405 METHOD_NOT_ALLOWED · 400 CONFIRM_REQUIRED · 401 UNAUTHORIZED · 403 ACCOUNT_PROTECTED ·
+     * 429 RATE_LIMITED (+retry_after) · 502 AUTH0_DELETE_FAILED (Joomla'da hiçbir şey silinmedi) ·
+     * 503 DELETE_UNAVAILABLE · 500 DELETE_FAILED. Hata kodu `errors[0].error_code`'da.
+     */
+    private function handleUserDelete(string $uri): void
+    {
+        $this->dbg('user-delete', $uri);
+
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->responseHelper->sendError(405, 'Method Not Allowed', 'Only POST method is allowed', ['error_code' => 'METHOD_NOT_ALLOWED']);
+            return;
+        }
+
+        if (!class_exists('AccountDeletionHelper') || !class_exists('Auth0ManagementClient') || !class_exists('NumisTRJwtVerifier')) {
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Account deletion not installed', ['error_code' => 'DELETE_UNAVAILABLE']);
+            return;
+        }
+
+        $settings = AccountDeletionHelper::settings($this->config);
+
+        // Kaba IP sınırı; kişi başına saatlik tavan yardımcıda (sha256(sub)).
+        $this->checkRateLimit('user-delete', $settings['ip_per_minute'], 'RATE_LIMITED');
+
+        // Gövde YALNIZ onay için okunur; kimlik asla gövdeden alınmaz.
+        if (!AccountDeletionHelper::confirmed((string) file_get_contents('php://input'))) {
+            $this->responseHelper->sendError(400, 'Bad Request', 'Body must be {"confirm": true}', ['error_code' => 'CONFIRM_REQUIRED']);
+            return;
+        }
+
+        $claims = null;
+        $auth   = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+
+        if (preg_match('/^Bearer\s+(\S+)$/i', trim($auth), $m)) {
+            $verifier = new NumisTRJwtVerifier($this->config['AUTH0'] ?? []);
+            $claims   = $verifier->verify($m[1]);
+
+            if ($claims === null) {
+                $this->dbg('user-delete-jwt-failed', $verifier->getLastError());
+            }
+        }
+
+        $helper = new AccountDeletionHelper($this->config);
+        $res    = $helper->run($claims);
+
+        // 401 dışındaki her sonuç günlüğe (e-posta yazılmaz): administrator/logs/numistr_user_delete.php
+        if ($res['status'] !== 401) {
+            AccountDeletionHelper::writeLog($res['log'], $res['error']);
+        }
+
+        if ($res['status'] === 200) {
+            $this->responseHelper->sendJson(['data' => $res['body']], true);
+            return;
+        }
+
+        $titles = [401 => 'Unauthorized', 403 => 'Forbidden', 429 => 'Too Many Requests', 500 => 'Internal Server Error', 502 => 'Bad Gateway', 503 => 'Service Unavailable'];
 
         $this->responseHelper->sendError(
             $res['status'],

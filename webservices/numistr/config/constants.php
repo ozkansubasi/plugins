@@ -55,9 +55,10 @@ return [
         'jwks_ttl'     => 43200,
         'jwks_timeout' => 8,
 
-        // A23 (1.19.0) — POST /v1/auth/resend-verification: dogrulama iletisini yeniden gonder.
-        // Auth0 Management API (jobs/verification-email, yetki YALNIZ update:users) M2M istemcisiyle.
-        // Kimlik bilgileri secrets.php'de; bossa uc 503 doner (ozellik kapali).
+        // Auth0 Management API M2M istemcisi (Auth0ManagementClient). Yetkiler: update:users + delete:users.
+        //   A23 (1.19.0) POST /v1/auth/resend-verification → jobs/verification-email (update:users)
+        //   1.20.0      POST /v1/user/delete               → DELETE /api/v2/users/{id} (delete:users)
+        // Kimlik bilgileri secrets.php'de; bossa iki uc da 503 doner (ozellik kapali).
         'management' => [
             // Management API kanonik tenant adresinde calisir; custom domain (login.numistr.org) DEGIL.
             'domain'           => 'dev-ja5k8sumb7005j4n.us.auth0.com',
@@ -69,6 +70,16 @@ return [
             'per_day'          => 5,   // kisi basina (UTC gun)
             'global_per_hour'  => 30,  // tum hesaplar; Auth0 e-posta + M2M belirtec kotasini korur
         ],
+    ],
+
+    // ================= Hesap silme (1.20.0, POST /v1/user/delete) =================
+    // App Store 5.1.1(v). Silme hemen yapilir; akis AccountDeletionHelper'da.
+    'ACCOUNT_DELETION' => [
+        'per_hour'      => 3,   // kisi basina (sha256(sub)), saatlik pencere; Auth0'ya giden her deneme sayilir
+        'ip_per_minute' => 10,  // kaba IP siniri (CGNAT payi)
+        // Uygulamadan silinemeyen gruplar. Joomla cekirdek kimlikleri: 6 Manager, 7 Administrator, 8 Super Users
+        // (bunlar her zaman korunur; buraya yazilan EKLENIR). core.admin / core.login.admin yetkisi olan herkes de korunur.
+        'protected_groups' => [6, 7, 8],
     ],
 
     // ================= RevenueCat webhook =================

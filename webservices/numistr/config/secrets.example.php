@@ -54,9 +54,12 @@ return [
     'KB_WEBHOOK_SECRET' => '',
 
     /*
-     * A23 (1.19.0) — e-posta doğrulama iletisini yeniden gönderme.
+     * Auth0 Management API M2M kimliği (Auth0ManagementClient).
      * Auth0 → Applications → Machine to Machine uygulaması "NumisTR API — doğrulama iletisi",
-     * Auth0 Management API'ye YALNIZ `update:users` yetkisiyle. Boş bırakılırsa uç kapalıdır (503).
+     * Auth0 Management API'ye YALNIZ `update:users` + `delete:users` yetkileriyle (başka kapsam yok):
+     *   - update:users → A23 (1.19.0) e-posta doğrulama iletisini yeniden gönderme
+     *   - delete:users → 1.20.0 uygulama içi hesap silme (POST /v1/user/delete)
+     * Boş bırakılırsa iki uç da kapalıdır (503).
      */
     'auth0_m2m_client_id'     => '',
     'auth0_m2m_client_secret' => '',
