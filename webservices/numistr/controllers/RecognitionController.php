@@ -57,7 +57,9 @@ class RecognitionController
                     : AnonTrialHelper::deviceHash(isset($_SERVER['HTTP_X_DEVICE_ID']) ? $_SERVER['HTTP_X_DEVICE_ID'] : '');
 
                 if ($deviceHash === null) {
-                    self::sendError('Authentication required', 401);
+                    // 1.19.0: e-postası doğrulanmamış hesap ayrı kodla (uygulama doğrulama panelini açar).
+                    $failure = $hasAuthHeader ? $authHelper->getLastFailure() : '';
+                    self::sendError('Authentication required', 401, $failure !== '' ? $failure : 'ERROR');
                     return;
                 }
 

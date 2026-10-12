@@ -11,10 +11,25 @@ use Joomla\CMS\User\User;
 class NumisTRAuthHelper
 {
     private $config;
-    
+
+    /**
+     * Son authenticateUser() neden null döndü — istemciye makine-okunur kod olarak gider
+     * (1.19.0). Yalnız istemcinin davranışını değiştiren durumlar: 'EMAIL_NOT_VERIFIED'
+     * (Auth0 hesabı var ama e-posta doğrulanmadı → uygulama doğrulama panelini gösterir).
+     * Diğer tüm başarısızlıklarda boş.
+     *
+     * @var string
+     */
+    private $lastFailure = '';
+
     public function __construct(array $config)
     {
         $this->config = $config;
+    }
+
+    public function getLastFailure(): string
+    {
+        return $this->lastFailure;
     }
     
     /**
@@ -29,6 +44,7 @@ class NumisTRAuthHelper
      */
     public function authenticateUser(): ?User
     {
+        $this->lastFailure = '';
         $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
         if (empty($authHeader)) {
             return null;
@@ -130,6 +146,7 @@ class NumisTRAuthHelper
 
                 if ($requireVerified && !$emailVerified) {
                     $this->dbg('jwt-error', 'Unverified email, refusing to link account: ' . $email);
+                    $this->lastFailure = 'EMAIL_NOT_VERIFIED';
                     return null;
                 }
 

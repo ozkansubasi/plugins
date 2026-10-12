@@ -54,6 +54,21 @@ return [
         // JWKS cache süresi (saniye) ve indirme timeout'u
         'jwks_ttl'     => 43200,
         'jwks_timeout' => 8,
+
+        // A23 (1.19.0) — POST /v1/auth/resend-verification: dogrulama iletisini yeniden gonder.
+        // Auth0 Management API (jobs/verification-email, yetki YALNIZ update:users) M2M istemcisiyle.
+        // Kimlik bilgileri secrets.php'de; bossa uc 503 doner (ozellik kapali).
+        'management' => [
+            // Management API kanonik tenant adresinde calisir; custom domain (login.numistr.org) DEGIL.
+            'domain'           => 'dev-ja5k8sumb7005j4n.us.auth0.com',
+            'client_id'        => $secrets['auth0_m2m_client_id'] ?? '',
+            'client_secret'    => $secrets['auth0_m2m_client_secret'] ?? '',
+            // Iletideki baglanti bu uygulamanin ayarlariyla gelir (mobil uygulama, audiences[0]).
+            'verify_client_id' => '5AFSce7JEdmyxBrwjwEI7IcnRnvXKF8c',
+            'per_minute'       => 1,   // kisi basina
+            'per_day'          => 5,   // kisi basina (UTC gun)
+            'global_per_hour'  => 30,  // tum hesaplar; Auth0 e-posta + M2M belirtec kotasini korur
+        ],
     ],
 
     // ================= RevenueCat webhook =================

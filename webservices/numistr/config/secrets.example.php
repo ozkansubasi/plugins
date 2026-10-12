@@ -52,4 +52,12 @@ return [
     'GEMINI_API_KEY'    => '',
     'ANTHROPIC_API_KEY' => '',
     'KB_WEBHOOK_SECRET' => '',
+
+    /*
+     * A23 (1.19.0) — e-posta doğrulama iletisini yeniden gönderme.
+     * Auth0 → Applications → Machine to Machine uygulaması "NumisTR API — doğrulama iletisi",
+     * Auth0 Management API'ye YALNIZ `update:users` yetkisiyle. Boş bırakılırsa uç kapalıdır (503).
+     */
+    'auth0_m2m_client_id'     => '',
+    'auth0_m2m_client_secret' => '',
 ];

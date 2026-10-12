@@ -148,6 +148,24 @@ class NumisTRRateLimiter
     }
 
     /**
+     * Adlandirilmis pencere sayaci — ozel kurallar icin (orn. A23 dogrulama iletisi:
+     * kisi basina dakikada 1 + gunde 5, genel saatte 30). Pencere kimligini cagiran verir.
+     *
+     * @param   string  $group   Onbellek grubu
+     * @param   string  $key     Sayac anahtari (kisisel veri yazma: ozet kullan)
+     * @param   string  $window  Pencere kimligi (degisince sayac sifirlanir)
+     * @param   int     $max     Tavan (0 veya eksi = kapali)
+     *
+     * @return  bool  Istek yapilabilir mi? (onbellek kullanilamiyorsa fail-open + log)
+     *
+     * @since   1.19.0
+     */
+    public function checkWindowLimit(string $group, string $key, string $window, int $max): bool
+    {
+        return $this->bumpCounter($group, $key, $window, $max);
+    }
+
+    /**
      * Gunluk sayacin bugunku degeri (teshis/gozlem icin).
      */
     public function getDailyCount(string $subject): int

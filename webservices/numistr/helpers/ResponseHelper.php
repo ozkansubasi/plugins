@@ -71,10 +71,16 @@ class NumisTRResponseHelper
      * @param int $code HTTP status code
      * @param string $title Error başlığı
      * @param string|null $detail Detaylı açıklama (opsiyonel)
+     * @param array $extra errors[0]'a eklenecek alanlar (1.19.0): 'error_code' (makine-okunur,
+     *                     ör. EMAIL_NOT_VERIFIED), 'retry_after' (sn; Retry-After başlığı da yazılır)
      */
-    public function sendError(int $code, string $title, string $detail = null): void
+    public function sendError(int $code, string $title, string $detail = null, array $extra = []): void
     {
         $app = Factory::getApplication();
+
+        if (!empty($extra['retry_after'])) {
+            $app->setHeader('Retry-After', (string) (int) $extra['retry_after'], true);
+        }
         
         // CORS Headers
         $app->setHeader('Access-Control-Allow-Origin', '*', true);
@@ -90,17 +96,34 @@ class NumisTRResponseHelper
         // HTTP status code
         http_response_code($code);
         
-        // Error payload oluştur
-        $err = ['errors' => [['title' => $title, 'code' => $code]]];
-        if ($detail) {
-            $err['errors'][0]['detail'] = $detail;
-        }
-        
-        $json = json_encode($err, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $json = json_encode(self::errorPayload($code, $title, $detail, $extra), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $etag = '"' . sha1($json) . '"';
         $app->setHeader('ETag', $etag, true);
         
         echo $json;
         $app->close();
+    }
+
+    /**
+     * Hata gövdesi (saf; test edilebilir). Eski alanlar (title, code=HTTP, detail) aynen kalır;
+     * ek alanlar yalnız verildiğinde eklenir — mevcut istemciler etkilenmez.
+     */
+    public static function errorPayload(int $code, string $title, string $detail = null, array $extra = []): array
+    {
+        $err = ['title' => $title, 'code' => $code];
+
+        if ($detail) {
+            $err['detail'] = $detail;
+        }
+
+        if (!empty($extra['error_code'])) {
+            $err['error_code'] = (string) $extra['error_code'];
+        }
+
+        if (!empty($extra['retry_after'])) {
+            $err['retry_after'] = (int) $extra['retry_after'];
+        }
+
+        return ['errors' => [$err]];
     }
 }

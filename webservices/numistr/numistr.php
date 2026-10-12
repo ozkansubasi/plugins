@@ -35,6 +35,9 @@ if (file_exists(__DIR__ . '/helpers/QuotaHelper.php')) {
 if (file_exists(__DIR__ . '/helpers/AnonTrialHelper.php')) {
     require_once __DIR__ . '/helpers/AnonTrialHelper.php';
 }
+if (file_exists(__DIR__ . '/helpers/VerificationResendHelper.php')) {
+    require_once __DIR__ . '/helpers/VerificationResendHelper.php';
+}
 if (file_exists(__DIR__ . '/helpers/AiServiceHelper.php')) {
     require_once __DIR__ . '/helpers/AiServiceHelper.php';
 }
@@ -142,9 +145,17 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function requireAuth(): User
     {
         $user = $this->authHelper->authenticateUser();
-        
+
         if ($user === null) {
-            $this->responseHelper->sendError(401, 'Unauthorized', 'Valid API token required. Use: Authorization: Bearer {token}');
+            // 1.19.0: e-postası doğrulanmamış Auth0 hesabı ayrı kodla bildirilir; uygulama
+            // doğrulama panelini gösterir (yoklama isteğine gerek kalmaz). Diğer durumlar aynı.
+            $failure = $this->authHelper->getLastFailure();
+            $this->responseHelper->sendError(
+                401,
+                'Unauthorized',
+                'Valid API token required. Use: Authorization: Bearer {token}',
+                $failure !== '' ? ['error_code' => $failure] : []
+            );
             exit;
         }
 
@@ -486,6 +497,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== ANON TRIAL QUOTA: /v1/anon/scan-quota (M17) ==
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/anon/scan-quota(?:[/?#;]|$)~', $uri)) {
             $this->handleAnonScanQuota($uri);
+            return;
+        }
+
+        // ===================== RESEND VERIFICATION: POST /v1/auth/resend-verification (A23) ==
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/auth/resend-verification(?:[/?#;]|$)~', $uri)) {
+            $this->handleResendVerification($uri);
             return;
         }
 
@@ -2451,6 +2468,68 @@ class PlgWebservicesNumistr extends CMSPlugin
             'reset_date' => null,
             'tier'       => 'anonymous',
         ], true);
+    }
+
+    /**
+     * POST /v1/auth/resend-verification — A23 (1.19.0): e-posta doğrulama iletisini yeniden gönder.
+     *
+     * Gövde yok. Kimlik YALNIZ `Authorization: Bearer <Auth0 ID token>`; imza her zaman doğrulanır
+     * (AUTH0.mode'dan bağımsız — burada bir eylem tetikleniyor). Joomla hesabı gerekmez: doğrulanmamış
+     * e-postaya hesap açılmadığı için bu kullanıcının Joomla hesabı zaten yoktur.
+     *
+     * Yanıtlar: 200 {sent:true, retry_after} · 200 {sent:false, code:ALREADY_VERIFIED} ·
+     * 400 NOT_APPLICABLE (sosyal giriş) · 401 INVALID_TOKEN · 429 RESEND_RATE_LIMITED (+Retry-After) ·
+     * 502 RESEND_FAILED · 503 RESEND_UNAVAILABLE. Hata kodu `errors[0].error_code`'da.
+     */
+    private function handleResendVerification(string $uri): void
+    {
+        $this->dbg('auth-resend-verification', $uri);
+
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->responseHelper->sendError(405, 'Method Not Allowed', 'Only POST method is allowed');
+            return;
+        }
+
+        if (!class_exists('VerificationResendHelper') || !class_exists('NumisTRJwtVerifier')) {
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Resend not installed', ['error_code' => 'RESEND_UNAVAILABLE']);
+            return;
+        }
+
+        // Kaba istek sınırı; asıl tavanlar (kişi başına dakikada 1 / günde 5, genel saatte 30) yardımcıda.
+        $this->checkRateLimit('auth-resend', 10);
+
+        $claims = null;
+        $auth   = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+
+        if (preg_match('/^Bearer\s+(\S+)$/i', trim($auth), $m)) {
+            $verifier = new NumisTRJwtVerifier($this->config['AUTH0'] ?? []);
+            $claims   = $verifier->verify($m[1]);
+
+            if ($claims === null) {
+                $this->dbg('auth-resend-jwt-failed', $verifier->getLastError());
+            }
+        }
+
+        $helper = new VerificationResendHelper($this->config);
+        $res    = $helper->resend($claims);
+
+        if ($helper->getLastError() !== '') {
+            $this->dbg('auth-resend-auth0-error', $helper->getLastError());
+        }
+
+        if ($res['status'] === 200) {
+            $this->responseHelper->sendJson($res['body'], true);
+            return;
+        }
+
+        $titles = [400 => 'Bad Request', 401 => 'Unauthorized', 429 => 'Too Many Requests', 502 => 'Bad Gateway', 503 => 'Service Unavailable'];
+
+        $this->responseHelper->sendError(
+            $res['status'],
+            $titles[$res['status']] ?? 'Error',
+            null,
+            ['error_code' => $res['code'], 'retry_after' => $res['retry_after']]
+        );
     }
 
     /**
