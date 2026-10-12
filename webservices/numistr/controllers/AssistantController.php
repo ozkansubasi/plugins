@@ -1852,21 +1852,15 @@ class AssistantController
         return hash('sha256', $ip . '|' . $ua . '|' . $cookie);
     }
 
+    /**
+     * Yalnızca REMOTE_ADDR (S27, 2026-10-11): site bir vekil arkasında değil; CF-Connecting-IP /
+     * X-Forwarded-For / X-Real-IP istemcinin uydurabileceği başlıklar ve anonim kotayı deliyordu.
+     */
     private static function clientIp(): string
     {
-        foreach (['HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'] as $h) {
-            if (!empty($_SERVER[$h])) {
-                $ip = (string) $_SERVER[$h];
+        $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
 
-                if (strpos($ip, ',') !== false) {
-                    $ip = trim(explode(',', $ip)[0]);
-                }
-
-                return $ip;
-            }
-        }
-
-        return '0.0.0.0';
+        return $ip !== '' ? $ip : '0.0.0.0';
     }
 
     // ======================================================================

@@ -236,30 +236,19 @@ class NumisTRRateLimiter
     }
     
     /**
-     * Client IP adresini al
+     * Client IP adresini al — yalnızca REMOTE_ADDR.
+     *
+     * 🔴 S27 (2026-10-11 bulundu): eskiden sırayla CF-Connecting-IP → X-Forwarded-For →
+     * X-Real-IP → REMOTE_ADDR okunuyordu. Site bir vekil arkasında DEĞİL (numistr.org
+     * doğrudan cPanel'e çözülüyor, yanıtta Cloudflare izi yok) → bu başlıkları istemci
+     * istediği gibi yazar ve her istekte farklı bir "IP" uydurup IP tabanlı sınırları
+     * deler. İleride bir vekil eklenirse güvenilir vekil listesiyle yeniden ele alınmalı.
      */
     private function getClientIP(): string
     {
-        $headers = [
-            'HTTP_CF_CONNECTING_IP', // Cloudflare
-            'HTTP_X_FORWARDED_FOR',
-            'HTTP_X_REAL_IP',
-            'REMOTE_ADDR'
-        ];
-        
-        foreach ($headers as $header) {
-            if (!empty($_SERVER[$header])) {
-                $ip = $_SERVER[$header];
-                // X-Forwarded-For birden fazla IP içerebilir
-                if (strpos($ip, ',') !== false) {
-                    $ips = explode(',', $ip);
-                    $ip = trim($ips[0]);
-                }
-                return $ip;
-            }
-        }
-        
-        return '0.0.0.0';
+        $ip = isset($_SERVER['REMOTE_ADDR']) ? trim((string) $_SERVER['REMOTE_ADDR']) : '';
+
+        return $ip !== '' ? $ip : '0.0.0.0';
     }
     
     /**
