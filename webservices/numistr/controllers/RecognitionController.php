@@ -192,7 +192,7 @@ class RecognitionController
         }
 
         $updatedQuotaStatus = $quotaHelper->canScan($user);
-        $formattedResults   = $core['helper']->formatResults($core['ai']);
+        $formattedResults   = self::licensedThumbnails($core['helper']->formatResults($core['ai']), $config);
 
         // 5. Loglama
         self::logSuccess($user->id, $core);
@@ -220,6 +220,37 @@ class RecognitionController
             ),
             'raw' => $core['ai']
         );
+    }
+
+    /**
+     * 1.20.0 — lisansi DOGRULANMAMIS gorselin kucuk resim adresi yanittan cikarilir (thumbnail_url = null);
+     * eslesme (makale, guven) aynen kalir. Kural ve tek kaynak: NumisTRImageLicense (coins_images.license/license_ok).
+     * Yardimci yuklu degilse ya da IMAGE_LICENSE.hide_unverified=false ise yanit degismez.
+     *
+     * @param   array  $formatted  AiServiceHelper::formatResults ciktisi
+     * @param   array  $config     constants.php
+     *
+     * @return  array
+     */
+    private static function licensedThumbnails(array $formatted, $config)
+    {
+        if (!class_exists('NumisTRImageLicense') || !NumisTRImageLicense::enabled((array) $config)) {
+            return $formatted;
+        }
+
+        $ids = NumisTRImageLicense::recognitionImageIds($formatted);
+
+        if (!$ids) {
+            return $formatted;
+        }
+
+        try {
+            $visible = NumisTRImageLicense::visibleIds(Factory::getDbo(), $ids);
+        } catch (\Throwable $e) {
+            $visible = array(); // lisans acisindan guvenli taraf: kucuk resim yok, tanima etkilenmez
+        }
+
+        return NumisTRImageLicense::scrubRecognition($formatted, $visible);
     }
 
     /**
@@ -271,7 +302,7 @@ class RecognitionController
             return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
         }
 
-        $formattedResults = $core['helper']->formatResults($core['ai']);
+        $formattedResults = self::licensedThumbnails($core['helper']->formatResults($core['ai']), $config);
 
         self::logSuccess(0, $core);
 

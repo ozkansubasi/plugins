@@ -72,6 +72,14 @@ return [
         ],
     ],
 
+    // ================= Görsel lisans kapısı (1.20.0) =================
+    // App Store "Content Rights": lisansı DOĞRULANMAMIŞ görseller (Kenom, DNB + küçük kaynaklar, ~2.100) REST API
+    // yanıtlarından çıkarılır; serbest + NC (ADR-008 §3.2) kalır. Sınıflandırma tek kaynaktan: coins_images.license +
+    // license_ok (NumisTRImageLicense). false = eski davranış (dosya geri almadan kapatma). Site bu kapsamda DEĞİL.
+    'IMAGE_LICENSE' => [
+        'hide_unverified' => true,
+    ],
+
     // ================= Hesap silme (1.20.0, POST /v1/user/delete) =================
     // App Store 5.1.1(v). Silme hemen yapilir; akis AccountDeletionHelper'da.
     'ACCOUNT_DELETION' => [

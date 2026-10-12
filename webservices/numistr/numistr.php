@@ -22,6 +22,11 @@ require_once __DIR__ . '/helpers/RateLimiter.php';
 require_once __DIR__ . '/helpers/TickerHelper.php';
 require_once __DIR__ . '/helpers/ConfigParams.php';
 
+// Görsel lisans kapısı (1.20.0) — numistr.php ve RecognitionController kullanır; yoksa davranış eskisi gibi.
+if (file_exists(__DIR__ . '/helpers/ImageLicenseHelper.php')) {
+    require_once __DIR__ . '/helpers/ImageLicenseHelper.php';
+}
+
 // Locations helper (optional - locations feature not fully deployed yet)
 if (file_exists(__DIR__ . '/helpers/LocationsHelper.php')) {
     require_once __DIR__ . '/helpers/LocationsHelper.php';
@@ -1881,8 +1886,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         }
 
         if ($filters['has_images']) {
+            // 1.20.0: "görseli var" = API'nin gösterebildiği (lisansı doğrulanmış) görseli var; yalnız
+            // doğrulanmamış görseli olan sikke filtrede çıkmaz (images ucu onun için boş liste döner).
+            $licenseSql = (class_exists('NumisTRImageLicense') && NumisTRImageLicense::enabled($this->config))
+                ? ' AND ' . NumisTRImageLicense::sqlVisible($db, 'ci') : '';
             $existsSql = 'EXISTS (SELECT 1 FROM ' . $db->quoteName('coins_images', 'ci') 
-                . ' WHERE ' . $db->quoteName('ci.coin_id') . ' = ' . $db->quoteName('v.article_id') . ')';
+                . ' WHERE ' . $db->quoteName('ci.coin_id') . ' = ' . $db->quoteName('v.article_id') . $licenseSql . ')';
             $q->where($existsSql);
             $qCount->where($existsSql);
         }
@@ -2199,10 +2208,16 @@ class PlgWebservicesNumistr extends CMSPlugin
             // Hata varsa sessizce devam et
         }
 
+        // 1.20.0: lisansı doğrulanmamış görsel yanıta girmez (serbest + NC kalır). Hepsi gizliyse boş liste.
+        $hideUnverified = class_exists('NumisTRImageLicense') && NumisTRImageLicense::enabled($this->config);
+
         $data = [];
         foreach ($rows as $idx => $r) {
             $imageId = (int)($r['image_id'] ?? 0);
             if ($imageId <= 0) { continue; }
+            if ($hideUnverified && !NumisTRImageLicense::isVisible($r['license'] ?? null, $r['license_ok'] ?? null)) {
+                continue; // $idx özgün sıra: sikke-gorsel-url yalnız ilk görsel GÖRÜNÜRSE ona bağlanır
+            }
 
             // İlk görselde sikke-gorsel-url varsa remote_url olarak kullan (web sitesi mantığı)
             $remoteUrl = $r['remote_url'] ?? null;
