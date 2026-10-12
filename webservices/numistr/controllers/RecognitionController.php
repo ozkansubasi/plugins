@@ -98,6 +98,7 @@ class RecognitionController
             );
 
             header('Content-Type: application/json');
+            header('Cache-Control: no-store'); // A21: kullaniciya / kuruluma ozel yanit
             echo json_encode($response);
             jexit();
 
@@ -365,6 +366,7 @@ class RecognitionController
 
         http_response_code(429);
         header('Content-Type: application/json');
+        header('Cache-Control: no-store'); // A21: kullaniciya / kuruluma ozel yanit
         echo json_encode($response);
         jexit();
     }
@@ -392,6 +394,7 @@ class RecognitionController
 
         http_response_code($code);
         header('Content-Type: application/json');
+        header('Cache-Control: no-store'); // A21: kullaniciya / kuruluma ozel yanit
         echo json_encode($response);
         jexit();
     }

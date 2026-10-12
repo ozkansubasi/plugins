@@ -574,7 +574,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 ]
             ];
 
-            $this->responseHelper->sendJson($payload);
+            $this->responseHelper->sendJson($payload, true); // A21: kullaniciya ozel yanit, paylasimli onbellege girmez
 
         } catch (\Throwable $e) {
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
@@ -631,7 +631,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 ]
             ];
 
-            $this->responseHelper->sendJson($payload);
+            $this->responseHelper->sendJson($payload, true); // A21: kullaniciya ozel yanit, paylasimli onbellege girmez
 
         } catch (\Throwable $e) {
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
@@ -2500,7 +2500,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'reset_date' => $resetDate,
             ];
 
-            $this->responseHelper->sendJson($payload);
+            $this->responseHelper->sendJson($payload, true); // A21: kullaniciya ozel yanit, paylasimli onbellege girmez
 
         } catch (\Throwable $e) {
             $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
