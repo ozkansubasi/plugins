@@ -194,18 +194,23 @@ return [
     ],
     
     // Malzeme kısa kodları
+    // S28 (1.20.1): 'cu' eskiden 'copper'a gidiyordu; MATERIAL_VARIANTS'ta 'copper' anahtarı
+    // olmadığı için `IN ()` → 500. Katalogda ayrı bakır kaydı yok; normalizeMaterialKey de
+    // 'copper'ı bronze sayıyor — kısa kod da aynı yere gider. 'au' altın listesinde vardı, eşlemede yoktu.
     'MATERIAL_MAP' => [
         'ae' => 'bronze',
         'ar' => 'silver',
         'av' => 'gold',
+        'au' => 'gold',
         'el' => 'electrum',
-        'cu' => 'copper',
+        'cu' => 'bronze',
         'pb' => 'lead',
         'fe' => 'iron',
     ],
-    
+
     // Malzeme varyantları (veritabanında farklı şekillerde yazılabilir)
     'MATERIAL_VARIANTS' => [
+        'billon'   => ['billon', 'biyon'],   // S28: katalogda 218 kayıt (facet), filtresi 500 veriyordu
         'bronze'   => ['bronze', 'copper', 'cu', 'bronz', 'ae'],
         'electrum' => ['electrum', 'elektrum', 'el'],
         'gold'     => ['gold', 'altın', 'altin', 'av', 'au'],

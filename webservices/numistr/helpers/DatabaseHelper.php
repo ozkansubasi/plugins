@@ -109,19 +109,25 @@ class NumisTRDatabaseHelper
         if ($v === 'electrum' || $v === 'elektrum') return 'electrum';
         if ($v === 'lead' || $v === 'kursun') return 'lead';
         if ($v === 'iron' || $v === 'demir') return 'iron';
-        
+        if ($v === 'billon' || $v === 'biyon') return 'billon';
+
         return $v;
     }
-    
+
     /**
      * Malzeme varyantlarını döndürür
      * Veritabanında bu malzemenin hangi şekillerde yazılabileceğini belirtir
-     * 
-     * @param string $norm Normalize edilmiş malzeme key
-     * @return array Malzeme varyantları
+     *
+     * S28 (1.20.1): tanımsız değer kendisiyle eşleşir. Eskiden boş liste dönüyordu ve
+     * çağıranlar `IN ()` kuruyordu → MySQL sözdizimi hatası → 500 (hata metniyle birlikte).
+     * Facet ucu ham DB değerlerini döndürdüğü için ("nan" gibi) listede görünen her değer
+     * filtrelenebilir olmalı; bilinmeyen değer artık 0 sonuç verir.
+     *
+     * @param string $norm Normalize edilmiş malzeme key (boş olmayan)
+     * @return array Malzeme varyantları (en az bir eleman)
      */
     public function dbMaterialVariantsFor(string $norm): array
     {
-        return $this->config['MATERIAL_VARIANTS'][$norm] ?? [];
+        return $this->config['MATERIAL_VARIANTS'][$norm] ?? [$norm];
     }
 }
