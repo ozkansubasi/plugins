@@ -81,6 +81,15 @@ class AssistantController
         return (string) (self::$config['messages'][$lang][$key] ?? self::$config['messages']['tr'][$key] ?? $key);
     }
 
+    /** X-NumisTR-KB başlığı = secrets KB_WEBHOOK_SECRET (sır tanımlı değilse her zaman false). */
+    private static function kbSecretOk(): bool
+    {
+        $secret = trim((string) (self::$secrets['KB_WEBHOOK_SECRET'] ?? ''));
+        $given  = trim((string) ($_SERVER['HTTP_X_NUMISTR_KB'] ?? ''));
+
+        return $secret !== '' && $given !== '' && hash_equals($secret, $given);
+    }
+
     // ======================================================================
     // GET /v1/assistant/health
     // ======================================================================
@@ -97,6 +106,14 @@ class AssistantController
 
         // ?diag=1 -> one tiny live Gemini call, returns only the error text (never the keys)
         if (isset($_GET['diag']) && (string) $_GET['diag'] === '1') {
+            // S29 (1.20.2): diag herkese açıktı — her istek ücretli bir canlı Gemini çağrısı (?model= ile
+            // pahalı model de seçilebiliyordu) ve &tool= ile DB aracı çalıştırıyordu (istisna metni yanıtta).
+            // Artık export ile aynı KB sırrı şart; diag'sız health herkese açık kalır (duman testleri).
+            if (!self::kbSecretOk()) {
+                $response->sendError(401, 'Unauthorized', 'X-NumisTR-KB header required');
+                return;
+            }
+
             $llm   = new NumisTRLLMClient(self::$config, self::$secrets, null);
             $model = (string) (self::$config['models']['classify'] ?? 'gemini-2.5-flash-lite');
 
@@ -162,10 +179,7 @@ class AssistantController
         self::boot();
         $response = new NumisTRResponseHelper();
 
-        $secret = trim((string) (self::$secrets['KB_WEBHOOK_SECRET'] ?? ''));
-        $given  = trim((string) ($_SERVER['HTTP_X_NUMISTR_KB'] ?? ''));
-
-        if ($secret === '' || $given === '' || !hash_equals($secret, $given)) {
+        if (!self::kbSecretOk()) {
             $response->sendError(401, 'Unauthorized', 'X-NumisTR-KB header required');
             return;
         }
