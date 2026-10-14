@@ -105,7 +105,9 @@ class RecognitionController
             jexit();
 
         } catch (Exception $e) {
-            self::sendError('Internal server error: ' . $e->getMessage(), 500);
+            // S28 (1.20.1): istisna metni yalnız DEBUG_MODE'da yanıta girer; yoksa sunucu günlüğüne.
+            NumisTRResponseHelper::logThrowable($e);
+            self::sendError(NumisTRResponseHelper::$debug ? 'Internal server error: ' . $e->getMessage() : 'Internal server error', 500);
         }
     }
 

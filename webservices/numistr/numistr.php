@@ -136,6 +136,7 @@ class PlgWebservicesNumistr extends CMSPlugin
         $this->authHelper = new NumisTRAuthHelper($this->config);
         $this->dbHelper = new NumisTRDatabaseHelper($this->config);
         $this->responseHelper = new NumisTRResponseHelper();
+        NumisTRResponseHelper::$debug = !empty($this->config['DEBUG_MODE']);
         $this->rateLimiter = new NumisTRRateLimiter($this->config);
     }
 
@@ -619,7 +620,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($payload, true); // A21: kullaniciya ozel yanit, paylasimli onbellege girmez
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -676,7 +677,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($payload, true); // A21: kullaniciya ozel yanit, paylasimli onbellege girmez
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -775,7 +776,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson(['data' => $data]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -1040,7 +1041,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($payload);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -1285,7 +1286,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             ]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -1377,7 +1378,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson(['meta'=>['total'=>$total, 'years_bucket'=>$yearsBucket], 'facets'=>$facets]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -1447,7 +1448,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             }, $rows)]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal Server Error', $e->getMessage());
+            $this->responseHelper->sendServerError($e, 'Internal Server Error');
         }
     }
 
@@ -1517,7 +1518,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             }, $rows)]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal Server Error', $e->getMessage());
+            $this->responseHelper->sendServerError($e, 'Internal Server Error');
         }
     }
 
@@ -1565,7 +1566,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson(['data' => $data]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -1801,7 +1802,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson(['data' => $payload]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -2462,7 +2463,7 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         } catch (\Throwable $e) {
             $this->dbg('recognition-exception', $e->getMessage());
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -2689,7 +2690,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($payload, true); // A21: kullaniciya ozel yanit, paylasimli onbellege girmez
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -2731,7 +2732,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -2867,7 +2868,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 'meta' => ['page' => $page, 'limit' => $limit, 'total' => $total],
             ]);
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -2978,7 +2979,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($payload);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -3022,7 +3023,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson(['data' => $data]);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 
@@ -3099,7 +3100,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $this->responseHelper->sendJson($payload);
 
         } catch (\Throwable $e) {
-            $this->responseHelper->sendError(500, 'Internal server error', $e->getMessage());
+            $this->responseHelper->sendServerError($e);
         }
     }
 }

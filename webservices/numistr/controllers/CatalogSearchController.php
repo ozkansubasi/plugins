@@ -62,7 +62,7 @@ class CatalogSearchController
             $response->sendJson(['data' => $r, 'meta' => ['q' => $terms, 'lang' => $lang,
                 'match' => 'word-start (Türkçe ekler serbest)']], true);
         } catch (\Throwable $e) {
-            $response->sendError(500, 'Internal server error', $e->getMessage());
+            $response->sendServerError($e);
         }
     }
 }

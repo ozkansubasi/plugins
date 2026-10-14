@@ -9,6 +9,29 @@ use Joomla\CMS\Factory;
  */
 class NumisTRResponseHelper
 {
+    /** DEBUG_MODE (constants.php); eklenti kurucusunda atanır. */
+    public static bool $debug = false;
+
+    /**
+     * Beklenmeyen istisna → 500 (S28, 1.20.1).
+     *
+     * İstisna metni (SQL hatası, tablo/sütun adları, sorgu parçası) yalnız DEBUG_MODE'da yanıta
+     * girer; aksi hâlde sunucu günlüğüne yazılır ve istemci yalnız başlığı görür. Uygulama
+     * `detail` alanını kullanıcıya göstermiyor, yalnız kendi günlüğüne yazıyor (api_client.dart).
+     */
+    public function sendServerError(\Throwable $e, string $title = 'Internal server error'): void
+    {
+        self::logThrowable($e);
+        $this->sendError(500, $title, self::$debug ? $e->getMessage() : null);
+    }
+
+    /** İstisnayı PHP hata günlüğüne yazar (cPanel: betik dizinindeki error_log). */
+    public static function logThrowable(\Throwable $e): void
+    {
+        error_log('[NumisTR] ' . ($_SERVER['REQUEST_METHOD'] ?? '') . ' ' . ($_SERVER['REQUEST_URI'] ?? '')
+            . ' → ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
+    }
+
     /**
      * JSON response gönderir (başarılı)
      * 
@@ -74,7 +97,7 @@ class NumisTRResponseHelper
      * @param array $extra errors[0]'a eklenecek alanlar (1.19.0): 'error_code' (makine-okunur,
      *                     ör. EMAIL_NOT_VERIFIED), 'retry_after' (sn; Retry-After başlığı da yazılır)
      */
-    public function sendError(int $code, string $title, string $detail = null, array $extra = []): void
+    public function sendError(int $code, string $title, ?string $detail = null, array $extra = []): void
     {
         $app = Factory::getApplication();
 
@@ -108,7 +131,7 @@ class NumisTRResponseHelper
      * Hata gövdesi (saf; test edilebilir). Eski alanlar (title, code=HTTP, detail) aynen kalır;
      * ek alanlar yalnız verildiğinde eklenir — mevcut istemciler etkilenmez.
      */
-    public static function errorPayload(int $code, string $title, string $detail = null, array $extra = []): array
+    public static function errorPayload(int $code, string $title, ?string $detail = null, array $extra = []): array
     {
         $err = ['title' => $title, 'code' => $code];
 

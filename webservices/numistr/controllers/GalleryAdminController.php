@@ -103,7 +103,7 @@ class GalleryAdminController
             $response->sendJson(['data' => ['run_id' => $runId, 'dry_run' => $dryRun, 'counts' => $counts, 'results' => $results]], true);
         } catch (\Throwable $e) {
             // Çağıran HMAC ile doğrulanmış yönetici: hata metni gizlenmez (sessiz varsayılan hatayı maskeler dersi).
-            $response->sendError(500, 'Internal server error', $e->getMessage());
+            $response->sendServerError($e);
         }
     }
 }
