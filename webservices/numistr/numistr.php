@@ -1891,8 +1891,10 @@ class PlgWebservicesNumistr extends CMSPlugin
             // doğrulanmamış görseli olan sikke filtrede çıkmaz (images ucu onun için boş liste döner).
             $licenseSql = (class_exists('NumisTRImageLicense') && NumisTRImageLicense::enabled($this->config))
                 ? ' AND ' . NumisTRImageLicense::sqlVisible($db, 'ci') : '';
-            $existsSql = 'EXISTS (SELECT 1 FROM ' . $db->quoteName('coins_images', 'ci') 
-                . ' WHERE ' . $db->quoteName('ci.coin_id') . ' = ' . $db->quoteName('v.article_id') . $licenseSql . ')';
+            // 1.21.1 (G12): kaynağı erişilemeyen görsel "görseli var" saymaz
+            $availSql = class_exists('NumisTRImageLicense') ? ' AND ' . NumisTRImageLicense::sqlAvailable($db, 'ci') : '';
+            $existsSql = 'EXISTS (SELECT 1 FROM ' . $db->quoteName('coins_images', 'ci')
+                . ' WHERE ' . $db->quoteName('ci.coin_id') . ' = ' . $db->quoteName('v.article_id') . $licenseSql . $availSql . ')';
             $q->where($existsSql);
             $qCount->where($existsSql);
         }
@@ -2183,6 +2185,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                 $db->quoteName('ci.source_credit'),
                 $db->quoteName('ci.license'),
                 $db->quoteName('ci.license_ok'),
+                $db->quoteName('ci.source_unavailable'),
             ])
             ->from($imgTbl)
             ->where($db->quoteName('ci.coin_id') . ' = ' . (int)$variantId)
@@ -2218,6 +2221,9 @@ class PlgWebservicesNumistr extends CMSPlugin
             if ($imageId <= 0) { continue; }
             if ($hideUnverified && !NumisTRImageLicense::isVisible($r['license'] ?? null, $r['license_ok'] ?? null)) {
                 continue; // $idx özgün sıra: sikke-gorsel-url yalnız ilk görsel GÖRÜNÜRSE ona bağlanır
+            }
+            if (class_exists('NumisTRImageLicense') && !NumisTRImageLicense::isAvailable($r['source_unavailable'] ?? 0)) {
+                continue; // 1.21.1 (G12): kaynağı erişilemeyen görsel (kırık) yanıta girmez; aynı $idx kuralı
             }
 
             // İlk görselde sikke-gorsel-url varsa remote_url olarak kullan (web sitesi mantığı)

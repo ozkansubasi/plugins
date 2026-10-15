@@ -74,6 +74,22 @@ class NumisTRImageLicense
         return '(' . $ok . ' = 1 OR (' . $ok . ' = 0 AND ' . $lic . ' IS NOT NULL AND TRIM(' . $lic . ") <> ''))";
     }
 
+    /**
+     * G12 (2026-10-16): kaynağı erişilemeyen görsel (yerelde ve kalıcı önbellekte yok, kaynak vermiyor — ör. Gallica'nın
+     * Cloudflare engeli) hiçbir yanıtta yer almaz. Lisans kapısından bağımsız ve kapatma anahtarı yok: kırık görsel işe yaramaz.
+     * Alanı `coins_images.source_unavailable` dolduran: `scripts/g12_gorsel_envanter.php` + ısıtma denemesi (runbook).
+     */
+    public static function isAvailable($sourceUnavailable)
+    {
+        return (int) $sourceUnavailable !== 1;
+    }
+
+    /** SQL karşılığı (isAvailable ile aynı kural). `$alias` coins_images takma adı. */
+    public static function sqlAvailable($db, $alias)
+    {
+        return $db->quoteName($alias . '.source_unavailable') . ' = 0';
+    }
+
     /** Tanıma yanıtındaki (matches + near_matches) görsel kimlikleri. */
     public static function recognitionImageIds(array $formatted)
     {
@@ -140,6 +156,7 @@ class NumisTRImageLicense
                 'SELECT ' . $db->quoteName('ci.image_id') . ' FROM ' . $db->quoteName('coins_images', 'ci')
                 . ' WHERE ' . $db->quoteName('ci.image_id') . ' IN (' . implode(',', $ids) . ')'
                 . ' AND ' . self::sqlVisible($db, 'ci')
+                . ' AND ' . self::sqlAvailable($db, 'ci')
             );
 
             return array_map('intval', (array) $db->loadColumn());
