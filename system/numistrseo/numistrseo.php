@@ -66,14 +66,15 @@ class PlgSystemNumistrseo extends CMSPlugin
             }
         }
 
-        $doc->addHeadLink(htmlspecialchars($this->es['canonical'], ENT_QUOTES, 'UTF-8'), 'canonical');
+        // canonical çoğu zaman hreflang tr-TR ile aynı adres; addHeadLink adres başına tek etiket tuttuğu için (1.0.0'da canonical
+        // ezildi) canonical ve x-default dil süzgeci eklentisi gibi özel etiketle basılır
+        $doc->addCustomTag('<link href="' . htmlspecialchars($this->es['canonical'], ENT_QUOTES, 'UTF-8') . '" rel="canonical">');
 
         foreach ($this->es['alternates'] as $hreflang => $url) {
             $doc->addHeadLink(htmlspecialchars($url, ENT_QUOTES, 'UTF-8'), 'alternate', 'rel', array('hreflang' => $hreflang));
         }
 
         if ($this->es['xdefault']) {
-            // addHeadLink adres başına tek etiket tutar (x-default TR adresiyle aynı) → dil süzgeci eklentisi gibi özel etiket
             $doc->addCustomTag('<link href="' . htmlspecialchars($this->es['xdefault'], ENT_QUOTES, 'UTF-8') . '" rel="alternate" hreflang="x-default">');
         }
     }
@@ -141,7 +142,9 @@ class PlgSystemNumistrseo extends CMSPlugin
 
         $es  = PlgNumistrSeoHelper::esSec($adaylar, (string) $cur->title);
         $ben = $this->url((int) $cur->id, (string) $cur->alias, (int) $cur->catid, $benim);
-        $out = array('canonical' => $ben, 'alternates' => array(), 'xdefault' => null, 'switcher' => array());
+        // dil değiştirici: kendi dili de verilir — TR kopya /en/ yolunda açıldığında TR bağlantısı da sikkede kalsın
+        $out = array('canonical' => $ben, 'alternates' => array(), 'xdefault' => null,
+            'switcher' => array($benim === 'tr-TR' ? 'TR' : 'EN' => $ben));
 
         if ($es) {
             $esDil = $benim === 'tr-TR' ? 'en-GB' : 'tr-TR';
@@ -149,7 +152,7 @@ class PlgSystemNumistrseo extends CMSPlugin
             $tr    = $benim === 'tr-TR' ? $ben : $o;
             $out['alternates'] = array('tr-TR' => $tr, 'en-GB' => $benim === 'en-GB' ? $ben : $o);
             $out['xdefault']   = $tr;
-            $out['switcher']   = array($esDil === 'en-GB' ? 'EN' : 'TR' => $o);
+            $out['switcher'][$esDil === 'en-GB' ? 'EN' : 'TR'] = $o;
         }
 
         return $out;
