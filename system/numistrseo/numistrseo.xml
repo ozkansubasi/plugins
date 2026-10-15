@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>PLG_SYSTEM_NUMISTRSEO</name>
+    <author>NumisTR</author>
+    <creationDate>2026-10</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_NUMISTRSEO_XML_DESCRIPTION</description>
+
+    <files>
+        <filename plugin="numistrseo">numistrseo.php</filename>
+        <filename>helper.php</filename>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_system_numistrseo.sys.ini</language>
+        <language tag="tr-TR">tr-TR/plg_system_numistrseo.sys.ini</language>
+    </languages>
+</extension>
