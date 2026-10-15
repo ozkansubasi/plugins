@@ -36,5 +36,17 @@ check('EN sayfada TR bağlantısı eşe gider, EN (etkin) aynen', strpos($out2, 
 $q = $H::dilDegistirici($tr, array('EN' => 'https://e.org/a?x=1&y=2'));
 check('adres HTML için kaçışlı (&amp;)', strpos($q, 'href="https://e.org/a?x=1&amp;y=2"') !== false);
 
+// ------------------------------------------------------- karşılıklılık (1.0.2) ---
+$grup = array(array('id' => 6088, 'title' => 'Price 2056', 'language' => '*'),
+              array('id' => 26268, 'title' => 'Price 2056', 'language' => 'en-GB'),
+              array('id' => 26768, 'title' => 'Price 2056 (2)', 'language' => 'en-GB'));
+$tr = $grup[0];
+check('seçilen EN kopya (26268) karşılıklı', $H::karsilikliMi($grup, $tr, 26268) === true);
+check('mükerrer EN kopya (26768) karşılıksız → hreflang yok', $H::karsilikliMi($grup, $tr, 26768) === false);
+check('TR sayfasından: seçilen EN eşi TR\'yi geri gösterir', $H::karsilikliMi($grup, $grup[1], 6088) === true);
+$iki = array(array('id' => 5000, 'title' => 'X', 'language' => '*'), array('id' => 5001, 'title' => 'X', 'language' => '*'),
+             array('id' => 20000, 'title' => 'X', 'language' => 'en-GB'));
+check('iki TR kopya: EN eşi en küçük TR\'yi seçer → 5001 karşılıksız', $H::karsilikliMi($iki, $iki[2], 5001) === false && $H::karsilikliMi($iki, $iki[2], 5000) === true);
+
 echo "\n$ok passed, $fail failed\n";
 exit($fail ? 1 : 0);

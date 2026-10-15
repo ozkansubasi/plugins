@@ -40,6 +40,26 @@ class PlgNumistrSeoHelper
     }
 
     /**
+     * Eş karşılıklı mı: eşin kendi gözünden seçeceği karşı dil kopyası geçerli makale mi? (aynı coin-id'li tüm kopyalar verilir)
+     *
+     * @param   array  $hepsi  aynı coin-id'li yayındaki makaleler [['id','title','language'], ...] (geçerli makale dahil)
+     * @param   array  $es     esSec ile seçilen eş
+     * @param   int    $benId  geçerli makale
+     *
+     * @return  bool
+     */
+    public static function karsilikliMi(array $hepsi, array $es, $benId)
+    {
+        $esTr = in_array($es['language'], array('*', 'tr-TR'), true);
+        $geri = array_values(array_filter($hepsi, function ($a) use ($esTr, $es) {
+            return (int) $a['id'] !== (int) $es['id'] && ($esTr ? $a['language'] === 'en-GB' : in_array($a['language'], array('*', 'tr-TR'), true));
+        }));
+        $sec = self::esSec($geri, (string) $es['title']);
+
+        return $sec !== null && (int) $sec['id'] === (int) $benId;
+    }
+
+    /**
      * Dil değiştiricide (YOOtheme `mod-languages` bloğu) karşı dilin bağlantısını verilen adresle değiştirir.
      * Yalnız `mod-languages` bloklarının içine dokunur; etkin (`uk-active`) dil ve blok dışı bağlantılar aynen kalır.
      *

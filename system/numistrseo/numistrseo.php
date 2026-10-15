@@ -130,17 +130,23 @@ class PlgSystemNumistrseo extends CMSPlugin
             return null;
         }
 
-        $adaylar = $db->setQuery($db->getQuery(true)
+        // aynı coin-id'li tüm yayındaki kopyalar (iki dil, kendisi dahil) — karşılıklılık denetimi için
+        $hepsi = $db->setQuery($db->getQuery(true)
             ->select('c.id, c.title, c.alias, c.catid, c.language')
             ->from($db->quoteName('#__content', 'c'))
             ->join('INNER', $db->quoteName('#__fields_values', 'v') . ' ON v.item_id = CAST(c.id AS CHAR) COLLATE utf8mb4_unicode_ci')
             ->where('v.field_id = ' . $fid)
             ->where('v.value = ' . $db->quote($coin))
             ->where('c.state = 1')
-            ->where('c.id <> ' . $id)
-            ->where('c.language IN (' . implode(',', array_map(array($db, 'quote'), $karsi)) . ')'))->loadAssocList() ?: array();
+            ->where('c.language IN (' . implode(',', array_map(array($db, 'quote'), array('*', 'tr-TR', 'en-GB'))) . ')'))->loadAssocList() ?: array();
 
-        $es  = PlgNumistrSeoHelper::esSec($adaylar, (string) $cur->title);
+        $adaylar = array_values(array_filter($hepsi, function ($a) use ($karsi, $id) {
+            return (int) $a['id'] !== $id && in_array($a['language'], $karsi, true);
+        }));
+        $es = PlgNumistrSeoHelper::esSec($adaylar, (string) $cur->title);
+        // 1.0.2: hreflang yalnız karşılıklı çiftte — mükerrer EN kopyalardan (822 grup) seçilmeyen kopya TR'yi gösterse de TR onu
+        // göstermez; tek yönlü hreflang arama motorunca yok sayılır, basılmaz (canonical ve dil değiştirici kalır)
+        $karsilikli = $es !== null && PlgNumistrSeoHelper::karsilikliMi($hepsi, $es, (int) $cur->id);
         $ben = $this->url((int) $cur->id, (string) $cur->alias, (int) $cur->catid, $benim);
         // dil değiştirici: kendi dili de verilir — TR kopya /en/ yolunda açıldığında TR bağlantısı da sikkede kalsın
         $out = array('canonical' => $ben, 'alternates' => array(), 'xdefault' => null,
@@ -150,9 +156,12 @@ class PlgSystemNumistrseo extends CMSPlugin
             $esDil = $benim === 'tr-TR' ? 'en-GB' : 'tr-TR';
             $o     = $this->url((int) $es['id'], (string) $es['alias'], (int) $es['catid'], $esDil);
             $tr    = $benim === 'tr-TR' ? $ben : $o;
-            $out['alternates'] = array('tr-TR' => $tr, 'en-GB' => $benim === 'en-GB' ? $ben : $o);
-            $out['xdefault']   = $tr;
             $out['switcher'][$esDil === 'en-GB' ? 'EN' : 'TR'] = $o;
+
+            if ($karsilikli) {
+                $out['alternates'] = array('tr-TR' => $tr, 'en-GB' => $benim === 'en-GB' ? $ben : $o);
+                $out['xdefault']   = $tr;
+            }
         }
 
         return $out;
