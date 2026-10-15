@@ -271,6 +271,28 @@ class QuotaHelper
     }
 
     /**
+     * 1.21.0 (ADR-009 K3) — kullaniciya hicbir sikke bilgisi verilmeyen yanit tarama hakki DUSURMEZ:
+     * eslesme yok VE neden "modern para" ya da "sikke bulunamadi" (iki durumda da yakin aday / tanimlama
+     * karti bos). Oturumlu aylik kota ve oturumsuz deneme hakki icin ortak karar. Hiz siniri istek
+     * gunlugunden sayildigi icin muafiyetten etkilenmez.
+     *
+     * Bilerek dar: no_coin_detected zayif adaylarla birlikte de gelebilir (guven < 0,50) — o yanit aday
+     * gosterdigi icin hak duser. Bilinmeyen / bos neden -> hak duser (bugunku davranis).
+     *
+     * @param   array  $aiResults  AI servis yaniti (ham)
+     *
+     * @return  boolean
+     */
+    public static function isFreeScan(array $aiResults)
+    {
+        $reason = isset($aiResults['no_match_reason']) ? $aiResults['no_match_reason'] : null;
+
+        return !empty($aiResults['no_match'])
+            && empty($aiResults['matches'])
+            && in_array($reason, array('modern_coin', 'no_coin_detected'), true);
+    }
+
+    /**
      * Yapilandirilmis adil kullanim tavanlari (istemciye bildirmek icin publik).
      *
      * @return  array  ['burst'=>int,'hour'=>int,'day'=>int]  burst penceresi 120 sn

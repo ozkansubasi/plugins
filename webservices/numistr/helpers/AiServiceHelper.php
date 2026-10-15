@@ -256,7 +256,11 @@ class AiServiceHelper
             // Hedef 2 (2026-10-09): tip doğrulanmasa da fotoğrafın söyledikleri (hükümdar / hanedan / darphane /
             // tarih, ikinci aşamada arka yüz) — servis ne gönderdiyse aynen; yoksa ya da bozuksa null
             'identification' => isset($aiResults['identification']) && is_array($aiResults['identification'])
-                ? $aiResults['identification'] : null
+                ? $aiResults['identification'] : null,
+            // AI12 / ADR-009 K4 (1.21.0): no_match_reason=modern_coin iken {country, unit, denomination, year}
+            // (okunamayan alan null) — servis ne gönderdiyse aynen; yoksa ya da bozuksa null
+            'modern_coin' => isset($aiResults['modern_coin']) && is_array($aiResults['modern_coin'])
+                ? $aiResults['modern_coin'] : null
         );
     }
 

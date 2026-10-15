@@ -186,11 +186,14 @@ class RecognitionController
             return $core;
         }
 
-        // 4. Kota tuketimi (yalnizca basarili tanimadan sonra)
-        try {
-            $quotaHelper->consumeScan($user);
-        } catch (RuntimeException $e) {
-            return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
+        // 4. Kota tuketimi (yalnizca basarili tanimadan sonra). 1.21.0: sikke bilgisi verilmeyen yanit
+        // (modern para / sikke bulunamadi) hak dusurmez — ADR-009 K3; istek yine gunluge yazilir (hiz siniri).
+        if (!QuotaHelper::isFreeScan($core['ai'])) {
+            try {
+                $quotaHelper->consumeScan($user);
+            } catch (RuntimeException $e) {
+                return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
+            }
         }
 
         $updatedQuotaStatus = $quotaHelper->canScan($user);
@@ -298,10 +301,15 @@ class RecognitionController
             return $core;
         }
 
-        try {
-            $trial->consume($deviceHash);
-        } catch (RuntimeException $e) {
-            return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
+        // 1.21.0 (ADR-009 K3): kayitli kullaniciyla ayni kural; IP / genel tavan istek gunlugunden sayilir.
+        $free = QuotaHelper::isFreeScan($core['ai']);
+
+        if (!$free) {
+            try {
+                $trial->consume($deviceHash);
+            } catch (RuntimeException $e) {
+                return array('ok' => false, 'status' => 500, 'error' => array('code' => 'ERROR', 'message' => 'Quota consumption failed'));
+            }
         }
 
         $formattedResults = self::licensedThumbnails($core['helper']->formatResults($core['ai']), $config);
@@ -312,7 +320,7 @@ class RecognitionController
             'ok' => true,
             'status' => 200,
             'data' => $formattedResults,
-            'quota' => $trial->quota($used + 1),
+            'quota' => $trial->quota($free ? $used : $used + 1),
             'request_id' => 'req_' . substr($core['hash'], 0, 16),
             'raw' => $core['ai']
         );

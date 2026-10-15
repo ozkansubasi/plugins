@@ -45,3 +45,16 @@ check('identification aynen geçer', $r5['identification'] === $kimlik);
 check('eski servis: identification=null', $r3['identification'] === null);
 $r6 = $h->formatResults(['matches' => [], 'identification' => 'bozuk']);
 check('bozuk identification -> null', $r6['identification'] === null);
+
+// AI12 / ADR-009 K4 (1.21.0): modern_coin aynen geçer; eski servis / bozuk veri -> null
+$modern = ['country' => 'TR', 'unit' => 'lira', 'denomination' => 1, 'year' => 2005];
+$r7 = $h->formatResults(['matches' => [], 'no_match' => true, 'no_match_reason' => 'modern_coin',
+    'near_matches' => [], 'identification' => null, 'modern_coin' => $modern]);
+check('modern_coin aynen geçer', $r7['modern_coin'] === $modern && $r7['no_match_reason'] === 'modern_coin');
+check('modern_coin: kart ve yakın aday boş geçer', $r7['identification'] === null && $r7['near_matches'] === []);
+$r8 = $h->formatResults(['matches' => [], 'no_match' => true, 'no_match_reason' => 'modern_coin',
+    'modern_coin' => ['country' => 'TR', 'unit' => null, 'denomination' => null, 'year' => null]]);
+check('modern_coin: okunamayan alanlar null kalır', $r8['modern_coin']['unit'] === null && $r8['modern_coin']['year'] === null);
+check('eski servis: modern_coin=null', $r3['modern_coin'] === null);
+$r9 = $h->formatResults(['matches' => [], 'modern_coin' => 'bozuk']);
+check('bozuk modern_coin -> null', $r9['modern_coin'] === null);
