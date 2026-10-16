@@ -43,6 +43,15 @@ return [
     'gallery_admin_secret' => '',
 
     /*
+     * AI dizini eşitlemesi (AI9) — /v1/admin/ai/catalog katalog dökümü ucu, HMAC-SHA256 sırrı.
+     * YALNIZ okuma ucunu açar (galeri yazma uçları ayrı sırda). Aynı değer AI VPS'te
+     * /opt/ai_service/oto_esitle/.ai_sync_secret ve yerelde .claude/secrets.local.md içinde durur.
+     * En az 32 karakter; boş bırakılırsa uç kapalıdır (503).
+     *   php -r "echo bin2hex(random_bytes(32));"
+     */
+    'ai_sync_secret' => '',
+
+    /*
      * AI Asistan (ADR-003). Anahtarlar:
      *   GEMINI_API_KEY    : Google AI Studio (aistudio.google.com) API key
      *   ANTHROPIC_API_KEY : console.anthropic.com API key

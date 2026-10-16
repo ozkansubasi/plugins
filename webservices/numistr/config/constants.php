@@ -162,6 +162,16 @@ return [
         'max_articles' => 50,   // istek başına makale
     ],
 
+    /*
+     * AI dizini eşitlemesi (AI9) — /v1/admin/ai/catalog, HMAC-SHA256, salt okunur.
+     * secret boş/32 karakterden kısaysa uç KAPALI (503). Galeri sırrından AYRI tutulur.
+     * Değer config/secrets.php içinde: 'ai_sync_secret'.
+     */
+    'AI_SYNC' => [
+        'secret'   => $secrets['ai_sync_secret'] ?? '',
+        'max_skew' => 300,  // saniye; imza zaman damgası toleransı
+    ],
+
     // Üniversite öğrenci grup ID'si (ücretsiz Pro erişimi)
     // Joomla Admin > Users > Groups'ta oluşturulan "Universite Ogrencileri" grubunun ID'si
     // NOT: Grubu oluşturduktan sonra bu değeri güncelleyin!

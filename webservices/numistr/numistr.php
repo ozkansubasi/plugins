@@ -76,6 +76,13 @@ if (file_exists(__DIR__ . '/helpers/GalleryAdminHelper.php')
     require_once __DIR__ . '/controllers/GalleryAdminController.php';
 }
 
+// ---- AI dizini esitlemesi (yonetici ucu, 1.22.0) - optional, all-or-nothing ----
+if (file_exists(__DIR__ . '/helpers/AiCatalogHelper.php')
+    && file_exists(__DIR__ . '/controllers/AiSyncController.php')) {
+    require_once __DIR__ . '/helpers/AiCatalogHelper.php';
+    require_once __DIR__ . '/controllers/AiSyncController.php';
+}
+
 // ---- Katalog motif aramasi (ic uc, 1.15.0) - optional, all-or-nothing ----
 if (file_exists(__DIR__ . '/helpers/MotifSearchHelper.php')
     && file_exists(__DIR__ . '/controllers/CatalogSearchController.php')) {
@@ -381,6 +388,20 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
             GalleryAdminController::handle($m[1]);
+            return;
+        }
+
+        // ===================== AI SYNC: /v1/admin/ai/catalog ===============
+        // HMAC imzali (secrets.php ai_sync_secret; galeri sirrindan AYRI); sir yoksa 503.
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/admin/ai/(catalog)(?:[/?#;]|$)~', $uri, $m)) {
+            $this->dbg('ai-sync-' . $m[1], $uri);
+
+            if (!class_exists('AiSyncController')) {
+                $this->responseHelper->sendError(503, 'Service Unavailable', 'AI sync not deployed');
+                return;
+            }
+
+            AiSyncController::handle($m[1]);
             return;
         }
 
