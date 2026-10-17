@@ -172,6 +172,20 @@ return [
         'max_skew' => 300,  // saniye; imza zaman damgası toleransı
     ],
 
+    /*
+     * Dönemsel içerik hattı — /v1/admin/blog/article, HMAC-SHA256 (1.23.0). Blog makalesi oluşturur/günceller.
+     * secret boş/32 karakterden kısaysa uç KAPALI (503). Galeri ve AI sırlarından AYRI.
+     * Değerler config/secrets.php içinde: 'blog_admin_secret', 'blog_admin_user_id' (yeni makalenin yazarı).
+     */
+    'BLOG_ADMIN' => [
+        'secret'         => $secrets['blog_admin_secret'] ?? '',
+        'max_skew'       => 300,
+        'created_by'     => (int) ($secrets['blog_admin_user_id'] ?? 0),
+        // Blog ağacı: 8 Blog > 35 Semboller, 36 Anadolu Atlası, 37 Numizmatik, 38 Koleksiyonerin Köşesi,
+        // 39 Sikkeler, 40 Tarihsel Anlatılar. Sikke kataloğu (ROOT_CAT_ID ağacı) bilerek DIŞARIDA.
+        'allowed_catids' => [35, 36, 37, 38, 39, 40],
+    ],
+
     // Üniversite öğrenci grup ID'si (ücretsiz Pro erişimi)
     // Joomla Admin > Users > Groups'ta oluşturulan "Universite Ogrencileri" grubunun ID'si
     // NOT: Grubu oluşturduktan sonra bu değeri güncelleyin!

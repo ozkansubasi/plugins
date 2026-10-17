@@ -76,6 +76,13 @@ if (file_exists(__DIR__ . '/helpers/GalleryAdminHelper.php')
     require_once __DIR__ . '/controllers/GalleryAdminController.php';
 }
 
+// ---- Blog yazma (yonetici ucu, 1.23.0) - optional, all-or-nothing ----
+if (file_exists(__DIR__ . '/helpers/BlogAdminHelper.php')
+    && file_exists(__DIR__ . '/controllers/BlogAdminController.php')) {
+    require_once __DIR__ . '/helpers/BlogAdminHelper.php';
+    require_once __DIR__ . '/controllers/BlogAdminController.php';
+}
+
 // ---- AI dizini esitlemesi (yonetici ucu, 1.22.0) - optional, all-or-nothing ----
 if (file_exists(__DIR__ . '/helpers/AiCatalogHelper.php')
     && file_exists(__DIR__ . '/controllers/AiSyncController.php')) {
@@ -402,6 +409,20 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
             AiSyncController::handle($m[1]);
+            return;
+        }
+
+        // ===================== BLOG ADMIN: /v1/admin/blog/article =========
+        // HMAC imzali (secrets.php blog_admin_secret; galeri/AI sirlarindan AYRI); sir yoksa 503.
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/admin/blog/(article)(?:[/?#;]|$)~', $uri, $m)) {
+            $this->dbg('blog-admin-' . $m[1], $uri);
+
+            if (!class_exists('BlogAdminController')) {
+                $this->responseHelper->sendError(503, 'Service Unavailable', 'Blog admin not deployed');
+                return;
+            }
+
+            BlogAdminController::handle($m[1]);
             return;
         }
 
