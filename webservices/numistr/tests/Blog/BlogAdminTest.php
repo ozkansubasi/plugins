@@ -52,3 +52,11 @@ check('ROOT etiketi (1) ret', $hata(['tags' => [1]]) !== null);
 check('metin etiket ret', $hata(['tags' => ['412']]) !== null);
 check('bilinmeyen dil ret', $hata(['language' => 'de-DE']) !== null);
 check('uzun metadesc ret', $hata(['metadesc' => str_repeat('a', 301)]) !== null);
+
+// 1.23.1: yeni makalede com_content modeli iş akışı aşaması için form yükler; API isteğinde JPATH_COMPONENT tanımsızdı
+// (canlıda 34038: makale yazıldı, iş akışı ilişkisi yazılmadı, 500). Kaynak düzeyinde koruma: sabitler modelden ÖNCE.
+$kaynak = file_get_contents($root . '/helpers/BlogAdminHelper.php');
+$sabit  = strpos($kaynak, "'JPATH_COMPONENT' =>");
+$model  = strpos($kaynak, "createModel('Article'");
+check('1.23.1: JPATH_COMPONENT modelden önce tanımlanıyor', $sabit !== false && $model !== false && $sabit < $model);
+check('1.23.1: sabit yalnız tanımsızsa tanımlanıyor', str_contains($kaynak, 'if (!defined($sabit))'));

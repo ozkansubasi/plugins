@@ -15,7 +15,7 @@
  * İmza galeri/AI uçlarıyla aynı biçimde, AYRI önek ('blog|') ve AYRI sırla (secrets.php 'blog_admin_secret').
  * Saf (DB'siz) kısım tests/Blog/BlogAdminTest.php ile sınanır.
  *
- * @since 1.23.0
+ * @since 1.23.0 (1.23.1: bileşen sabitleri, yeni makalede iş akışı ilişkisi)
  */
 
 defined('_JEXEC') or die;
@@ -147,6 +147,18 @@ final class NumisTRBlogAdmin
      */
     public static function kaydet(array $d, int $mevcutId, int $createdBy): array
     {
+        // 1.23.1 (2026-10-18, canlıda 500): API isteğinde hiçbir bileşen dağıtılmaz → JPATH_COMPONENT* tanımsız.
+        // Model YENİ makaleden sonra iş akışının ilk aşamasını yazmak için form yükler (WorkflowBehaviorTrait::
+        // workflowAfterSave → getForm → FormBehaviorTrait::loadForm, JPATH_COMPONENT . '/forms'). Sabit yoksa makale
+        // kaydedilir ama iş akışı ilişkisi yazılmadan istisna fırlar. İstek bu uçta biter; sabitler başka koda sızmaz.
+        foreach (['JPATH_COMPONENT' => JPATH_ADMINISTRATOR . '/components/com_content',
+                  'JPATH_COMPONENT_ADMINISTRATOR' => JPATH_ADMINISTRATOR . '/components/com_content',
+                  'JPATH_COMPONENT_SITE' => JPATH_SITE . '/components/com_content'] as $sabit => $yol) {
+            if (!defined($sabit)) {
+                define($sabit, $yol);
+            }
+        }
+
         $app   = Factory::getApplication();
         $model = $app->bootComponent('com_content')->getMVCFactory()
             ->createModel('Article', 'Administrator', ['ignore_request' => true]);
