@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="content" method="upgrade">
+    <name>PLG_CONTENT_NUMISTR</name>
+    <author>NumisTR</author>
+    <creationDate>2026-10</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_CONTENT_NUMISTR_XML_DESCRIPTION</description>
+
+    <files>
+        <filename plugin="numistr">numistr.php</filename>
+        <filename>helper.php</filename>
+    </files>
+
+    <languages folder="language">
+        <language tag="en-GB">en-GB/plg_content_numistr.sys.ini</language>
+        <language tag="tr-TR">tr-TR/plg_content_numistr.sys.ini</language>
+    </languages>
+</extension>
