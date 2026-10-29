@@ -287,24 +287,20 @@ class NumisTRAssistantTools
     /**
      * Regions whose pages do not sit at /{lang}/anatolian-coins/{region_code}/.
      *
-     * Both were producing a 404 for every coin in them; verified 2026-09-09 against
-     * live records (12093 Adana, 15060 Arsames):
+     * Was producing a 404 for every coin in it; verified 2026-09-09 against the live
+     * record 15060 Arsames:
      *
-     *  - cilicia-coins: the Turkish menu alias is "clicia-coins" - a typo on the site
-     *    that was never corrected, while the API and the English menu both spell it
-     *    properly. 824 variants, so every Turkish answer about a Cilician or Tarsus
-     *    coin handed the reader a dead link.
      *  - other-ancient-regions-coins: not under anatolian-coins at all, and the alias
      *    differs per language. 46 variants, broken in BOTH languages.
+     *
+     * cilicia-coins used to be listed here too: the Turkish menu alias was the typo
+     * "clicia-coins". The site alias was corrected on 2026-10-25 (menu 255) with a 301
+     * from the old address, so Cilicia now follows the default shape in both languages.
      *
      * The link filter cannot catch this: these URLs come from tool results, which it
      * trusts by construction. The shape has to be right at the source.
      */
     private const COIN_PATHS = [
-        'cilicia-coins' => [
-            'tr' => 'anatolian-coins/clicia-coins',
-            'en' => 'anatolian-coins/cilicia-coins',
-        ],
         'other-ancient-regions-coins' => [
             'tr' => 'other-ancient-place-coins',
             'en' => 'other-ancient-regions',

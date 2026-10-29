@@ -84,12 +84,12 @@ $detail = array_filter($all, static function ($u) {
 });
 check('no content detail page in the landing list', $detail === [], implode(',', $detail));
 
-// The Cilicia trap: the Turkish alias is the misspelled one. Listing the correctly
-// spelled URL would re-admit a 404 the model already produces on its own.
+// Cilicia: the Turkish alias was the typo "clicia-coins" until 2026-10-25. The old address
+// only survives as a 301, so the landing list carries the corrected one alone.
 check(
-    'TR cilicia listed under the site typo alias only',
-    in_array('https://numistr.org/tr/anatolian-coins/clicia-coins', $landing['tr'] ?? [], true)
-        && !in_array('https://numistr.org/tr/anatolian-coins/cilicia-coins', $landing['tr'] ?? [], true)
+    'TR cilicia listed under the corrected alias only',
+    in_array('https://numistr.org/tr/anatolian-coins/cilicia-coins', $landing['tr'] ?? [], true)
+        && !in_array('https://numistr.org/tr/anatolian-coins/clicia-coins', $landing['tr'] ?? [], true)
 );
 
 // ---- degenerate ----

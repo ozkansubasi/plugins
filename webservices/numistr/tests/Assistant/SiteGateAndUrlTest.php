@@ -70,11 +70,11 @@ check(
         === 'https://numistr.org/tr/anatolian-coins/pamphylia-coins/3404-aspendus-x'
 );
 
-// Verified against the live record 12093: the Turkish menu alias is misspelled.
+// The Turkish alias was the typo "clicia-coins" until 2026-10-25 (now 301 to the fixed one).
 check(
-    'cilicia TR uses the site typo alias',
+    'cilicia TR uses the corrected alias',
     $T::coinUrl($base, 'tr', 'cilicia-coins', 12093, 'adana-levante-1984-3-7')
-        === 'https://numistr.org/tr/anatolian-coins/clicia-coins/12093-adana-levante-1984-3-7'
+        === 'https://numistr.org/tr/anatolian-coins/cilicia-coins/12093-adana-levante-1984-3-7'
 );
 check(
     'cilicia EN keeps the correct spelling',

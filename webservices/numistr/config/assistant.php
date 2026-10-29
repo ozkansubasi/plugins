@@ -356,7 +356,7 @@ return [
             'https://numistr.org/tr/anatolian-coins/bithynia-coins',
             'https://numistr.org/tr/anatolian-coins/cappadocia-coins',
             'https://numistr.org/tr/anatolian-coins/caria-coins',
-            'https://numistr.org/tr/anatolian-coins/clicia-coins',
+            'https://numistr.org/tr/anatolian-coins/cilicia-coins',
             'https://numistr.org/tr/anatolian-coins/galatia-coins',
             'https://numistr.org/tr/anatolian-coins/ionia-coins',
             'https://numistr.org/tr/anatolian-coins/lycia-coins',
@@ -368,7 +368,7 @@ return [
             'https://numistr.org/tr/anatolian-coins/pisidia-coins',
             'https://numistr.org/tr/anatolian-coins/pontus-coins',
             'https://numistr.org/tr/anatolian-coins/troas-coins',
-            // NOT: /tr/anatolian-coins/cilicia-coins 404 verir; TR alias'i 'clicia' (sitede yazim hatasi).
+            // NOT: TR Kilikya alias'i 2026-10-25'e kadar 'clicia-coins' idi (yazim hatasi); eski adres 301 ile buraya gelir.
         ],
         'en' => [
             'https://numistr.org/en',
