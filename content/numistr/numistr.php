@@ -10,6 +10,7 @@
  * kaynağı erişilebilir görsel). Gösterilebilir görsel kalmazsa ya da sikke yayımda değilse figür düşer (yorum satırı kalır).
  * Önceden figür HTML'i makaleye donmuş olarak gömülüyordu: lisans sonradan kapansa da görünmeye devam ediyordu.
  * Site dışı istemcide (yönetim, API, Smart Search dizinleme) kod yalnız silinir — DB okunmaz.
+ * 1.1.0: EN yazıda altyazı ve alt metin İngilizce, bağlantı aynı coin-id'li EN sikke sayfası (yoksa TR sayfa).
  */
 
 defined('_JEXEC') or die;
@@ -50,17 +51,19 @@ class PlgContentNumistr extends CMSPlugin
             return;
         }
 
-        $article->text = PlgNumistrContentHelper::degistir($article->text, function ($variant, array $ids) {
-            return $this->figur($variant, $ids);
+        $dil = PlgNumistrContentHelper::dil($article->language ?? null, $this->app->getLanguage()->getTag());
+
+        $article->text = PlgNumistrContentHelper::degistir($article->text, function ($variant, array $ids) use ($dil) {
+            return $this->figur($variant, $ids, $dil);
         });
     }
 
-    private function figur($variant, array $ids)
+    private function figur($variant, array $ids, $dil)
     {
         $yorum = '<!-- ' . PlgNumistrContentHelper::KOD . ' ' . (int) $variant . ': %s -->';
 
         try {
-            $k = $this->kayit($variant);
+            $k = $this->kayit($variant, $dil);
 
             if ($k === null) {
                 return sprintf($yorum, 'sikke yayımda değil');
@@ -72,7 +75,7 @@ class PlgContentNumistr extends CMSPlugin
                 return sprintf($yorum, 'gösterilebilir görsel yok');
             }
 
-            return PlgNumistrContentHelper::figurHtml($k['kayit'], $k['url'], $secilen, rtrim(Uri::root(), '/'));
+            return PlgNumistrContentHelper::figurHtml($k['kayit'], $k['url'], $secilen, rtrim(Uri::root(), '/'), $dil);
         } catch (\Throwable $e) {
             return sprintf($yorum, 'hata');   // figür yoksa yazı yine açılır (lisans açısından güvenli taraf)
         }
@@ -84,12 +87,13 @@ class PlgContentNumistr extends CMSPlugin
     }
 
     /** @return array|null ['kayit' => PlgNumistrContentHelper::kayit(), 'url' => sikke sayfası] */
-    private function kayit($variant)
+    private function kayit($variant, $dil = 'tr')
     {
         $variant = (int) $variant;
+        $anahtar = $variant . ':' . $dil;
 
-        if (array_key_exists($variant, $this->kayitlar)) {
-            return $this->kayitlar[$variant];
+        if (array_key_exists($anahtar, $this->kayitlar)) {
+            return $this->kayitlar[$anahtar];
         }
 
         $db = $this->vt();
@@ -99,7 +103,7 @@ class PlgContentNumistr extends CMSPlugin
             ->where($db->quoteName('id') . ' = ' . $variant))->loadAssoc();
 
         if (!$c || (int) $c['state'] !== 1) {
-            return $this->kayitlar[$variant] = null;
+            return $this->kayitlar[$anahtar] = null;
         }
 
         $v = $db->setQuery($db->getQuery(true)
@@ -127,10 +131,43 @@ class PlgContentNumistr extends CMSPlugin
         $url = Route::link('site', RouteHelper::getArticleRoute($variant . ':' . $c['alias'], (int) $c['catid'], 'tr-TR'),
             false, Route::TLS_IGNORE, true);
 
-        return $this->kayitlar[$variant] = array(
-            'kayit' => PlgNumistrContentHelper::kayit($v, $alanlar, (string) $c['title']),
-            'url'   => $url,
-        );
+        $kayit = PlgNumistrContentHelper::kayit($v, $alanlar, (string) $c['title']);
+
+        if ($dil === 'en' && $kayit['coin_id'] !== null) {
+            $es = $this->enSikke((string) $kayit['coin_id'], (string) $c['title']);
+
+            if ($es !== null) {
+                $kayit['title'] = $es['title'];
+                $url = Route::link('site', RouteHelper::getArticleRoute($es['id'] . ':' . $es['alias'], (int) $es['catid'], 'en-GB'),
+                    false, Route::TLS_IGNORE, true);
+            }
+        }
+
+        return $this->kayitlar[$anahtar] = array('kayit' => $kayit, 'url' => $url);
+    }
+
+    /** Aynı coin-id'li yayındaki EN sikke: başlığı birebir aynı olan, yoksa en küçük kimlik (numistrseo esSec kuralı). */
+    private function enSikke($coinId, $baslik)
+    {
+        $db = $this->vt();
+        $satirlar = $db->setQuery($db->getQuery(true)
+            ->select($db->quoteName(array('c.id', 'c.title', 'c.alias', 'c.catid')))
+            ->from($db->quoteName('#__fields_values', 'fv'))
+            ->join('INNER', $db->quoteName('#__fields', 'f') . ' ON ' . $db->quoteName('f.id') . ' = ' . $db->quoteName('fv.field_id'))
+            ->join('INNER', $db->quoteName('#__content', 'c') . ' ON ' . $db->quoteName('c.id') . ' = ' . $db->quoteName('fv.item_id'))
+            ->where($db->quoteName('f.name') . ' = ' . $db->quote('coin-id'))
+            ->where($db->quoteName('fv.value') . ' = ' . $db->quote($coinId))
+            ->where($db->quoteName('c.language') . ' = ' . $db->quote('en-GB'))
+            ->where($db->quoteName('c.state') . ' = 1')
+            ->order($db->quoteName('c.id') . ' ASC'))->loadAssocList() ?: array();
+
+        foreach ($satirlar as $s) {
+            if (trim((string) $s['title']) === trim($baslik)) {
+                return $s;
+            }
+        }
+
+        return $satirlar[0] ?? null;
     }
 
     private function gorseller(array $ids)

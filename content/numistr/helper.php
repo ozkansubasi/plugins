@@ -22,12 +22,19 @@ class PlgNumistrContentHelper
     const EN_COK_GORSEL = 6;
 
     /** Altyazı için okunan özel alanlar (adlar tireli; sorgular.md şema notu). */
-    const ALANLAR = array('mint-name', 'material', 'start-date', 'end-date', 'obverse-desc-tr', 'reverse-desc-tr');
+    const ALANLAR = array('mint-name', 'material', 'start-date', 'end-date', 'obverse-desc-tr', 'reverse-desc-tr',
+        'obverse-desc', 'reverse-desc', 'coin-id');
 
     const METAL_TR = array('gold' => 'altın', 'silver' => 'gümüş', 'electrum' => 'elektrum', 'bronze' => 'bronz',
         'copper' => 'bakır', 'billon' => 'billon', 'lead' => 'kurşun');
 
     const YUZ_TR = array('on' => 'Ön yüz', 'arka' => 'Arka yüz', 'detay' => 'Detay');
+
+    /** EN yazı (1.1.0): altyazı ve alt metin İngilizce; TR çıktısı değişmez. */
+    const METAL_EN = array('gold' => 'gold', 'silver' => 'silver', 'electrum' => 'electrum', 'bronze' => 'bronze',
+        'copper' => 'copper', 'billon' => 'billon', 'lead' => 'lead');
+
+    const YUZ_EN = array('on' => 'Obverse', 'arka' => 'Reverse', 'detay' => 'Detail');
 
     /** Eklentinin DatabaseHelper::normalizeMaterialKey kısa kodları (constants.php MATERIAL_MAP). */
     const MALZEME_KOD = array('ae' => 'bronze', 'ar' => 'silver', 'av' => 'gold', 'au' => 'gold', 'el' => 'electrum',
@@ -40,6 +47,25 @@ class PlgNumistrContentHelper
     const S_IMG_CIFT  = 'max-width:230px;width:45%;display:block;height:auto';
     const S_ALTYAZI   = 'font-size:14px;line-height:1.6;color:#5b6470;text-align:center;margin-top:12px;max-width:560px;margin-left:auto;margin-right:auto';
     const S_ATIF      = 'display:block;font-size:12px;color:#999;margin-top:6px';
+
+    /**
+     * Figür dili: yazının dili, yazı dilsizse (`*`) sayfanın dili. Yalnız `en…` İngilizcedir; gerisi TR.
+     *
+     * @param   string|null  $yaziDili   #__content.language
+     * @param   string|null  $sayfaDili  etkin site dili (en-GB, tr-TR)
+     *
+     * @return  string  'en' | 'tr'
+     */
+    public static function dil($yaziDili, $sayfaDili)
+    {
+        $y = strtolower(trim((string) $yaziDili));
+
+        if ($y === '' || $y === '*') {
+            $y = strtolower(trim((string) $sayfaDili));
+        }
+
+        return strpos($y, 'en') === 0 ? 'en' : 'tr';
+    }
 
     /**
      * Metindeki her kısa kodu `$uret(variant, [görsel kimlikleri])` dönüşüyle değiştirir. Kodu tek başına saran <p> da
@@ -165,6 +191,9 @@ class PlgNumistrContentHelper
             'date_to'         => $yil($alanlar['end-date'] ?? $v['date_to'] ?? null),
             'obverse_desc_tr' => $alanlar['obverse-desc-tr'] ?? null,
             'reverse_desc_tr' => $alanlar['reverse-desc-tr'] ?? null,
+            'obverse_desc'    => $alanlar['obverse-desc'] ?? null,
+            'reverse_desc'    => $alanlar['reverse-desc'] ?? null,
+            'coin_id'         => $dolu($alanlar['coin-id'] ?? null),
         );
     }
 
@@ -215,6 +244,39 @@ class PlgNumistrContentHelper
         return $n < 0 ? 'MÖ ' . (-$n) : 'MS ' . $n;
     }
 
+    /** -261, -246 → '261–246 BC' · 128, 132 → 'AD 128–132' · -30, 14 → '30 BC – AD 14' */
+    public static function tarihAraligiEn(array $k)
+    {
+        $yaz = function ($n) {
+            return $n === null || $n === '' ? null : (int) $n;
+        };
+        $bas = $yaz($k['date_from'] ?? null);
+        $son = $yaz($k['date_to'] ?? null);
+        $tek = function ($n) {
+            return $n < 0 ? (-$n) . ' BC' : 'AD ' . $n;
+        };
+
+        if ($bas === null || $son === null) {
+            $v = $bas ?? $son;
+
+            return $v === null ? '' : $tek($v);
+        }
+
+        if ($bas === $son) {
+            return $tek($bas);
+        }
+
+        if ($bas < 0 && $son < 0) {
+            return (-$bas) . '–' . (-$son) . ' BC';
+        }
+
+        if ($bas >= 0 && $son >= 0) {
+            return 'AD ' . $bas . '–' . $son;
+        }
+
+        return $tek($bas) . ' – ' . $tek($son);
+    }
+
     public static function tarihAraligi(array $k)
     {
         $bas = self::yilYaz($k['date_from'] ?? null);
@@ -258,8 +320,9 @@ class PlgNumistrContentHelper
         return rtrim(trim((string) $s), '.');
     }
 
-    public static function altyazi(array $k, $sikkeUrl, array $secilen)
+    public static function altyazi(array $k, $sikkeUrl, array $secilen, $dil = 'tr')
     {
+        $en    = $dil === 'en';
         $parca = array();
         $darphane = trim((string) ($k['mint'] ?? ''));
 
@@ -267,13 +330,13 @@ class PlgNumistrContentHelper
             $parca[] = self::ilkBuyuk($darphane);
         }
 
-        $tarih = self::tarihAraligi($k);
+        $tarih = $en ? self::tarihAraligiEn($k) : self::tarihAraligi($k);
 
         if ($tarih !== '') {
             $parca[] = $tarih;
         }
 
-        $metal = self::METAL_TR[strtolower((string) ($k['material'] ?? ''))] ?? null;
+        $metal = ($en ? self::METAL_EN : self::METAL_TR)[strtolower((string) ($k['material'] ?? ''))] ?? null;
 
         if ($metal !== null) {
             $parca[] = $metal;
@@ -282,12 +345,15 @@ class PlgNumistrContentHelper
         $turler  = array_column($secilen, 'type');
         $betimler = array();
 
-        if (in_array('on', $turler, true) && trim((string) ($k['obverse_desc_tr'] ?? '')) !== '') {
-            $betimler[] = 'Ön yüz: ' . self::kirp($k['obverse_desc_tr']);
+        $onBetim   = $en ? ($k['obverse_desc'] ?? '') : ($k['obverse_desc_tr'] ?? '');
+        $arkaBetim = $en ? ($k['reverse_desc'] ?? '') : ($k['reverse_desc_tr'] ?? '');
+
+        if (in_array('on', $turler, true) && trim((string) $onBetim) !== '') {
+            $betimler[] = ($en ? 'Obverse: ' : 'Ön yüz: ') . self::kirp($onBetim);
         }
 
-        if (in_array('arka', $turler, true) && trim((string) ($k['reverse_desc_tr'] ?? '')) !== '') {
-            $betimler[] = 'Arka yüz: ' . self::kirp($k['reverse_desc_tr']);
+        if (in_array('arka', $turler, true) && trim((string) $arkaBetim) !== '') {
+            $betimler[] = ($en ? 'Reverse: ' : 'Arka yüz: ') . self::kirp($arkaBetim);
         }
 
         $metin = '<b><a href="' . self::ea($sikkeUrl) . '">' . self::e($k['title'] ?? '') . '</a></b>';
@@ -329,8 +395,9 @@ class PlgNumistrContentHelper
      * @param   string  $sikkeUrl  sikke sayfasının mutlak adresi
      * @param   array   $secilen   self::secilenler() (boş olmamalı)
      * @param   string  $kok       site kökü, sondaki / olmadan (https://www.numistr.org)
+     * @param   string  $dil       'tr' | 'en' (self::dil())
      */
-    public static function figurHtml(array $k, $sikkeUrl, array $secilen, $kok)
+    public static function figurHtml(array $k, $sikkeUrl, array $secilen, $kok, $dil = 'tr')
     {
         $cift   = count($secilen) > 1;
         $satir  = array('<figure class="numistr-figur" style="' . self::S_FIGUR . '">');
@@ -341,7 +408,7 @@ class PlgNumistrContentHelper
         }
 
         foreach ($secilen as $g) {
-            $yuz = self::YUZ_TR[$g['type'] ?? ''] ?? '';
+            $yuz = ($dil === 'en' ? self::YUZ_EN : self::YUZ_TR)[$g['type'] ?? ''] ?? '';
             $alt = $yuz !== '' ? ($k['title'] ?? '') . ' — ' . $yuz : ($k['title'] ?? '');
             $src = $kok . '/index.php?option=com_numistr&amp;view=gorsel&amp;format=raw&amp;id=' . (int) $g['image_id'] . '&amp;wm=1';
             $satir[] = $girinti . '<img src="' . $src . '" alt="' . self::ea($alt) . '" loading="lazy" style="'
@@ -353,7 +420,7 @@ class PlgNumistrContentHelper
         }
 
         $satir[] = '  <figcaption style="' . self::S_ALTYAZI . '">';
-        $satir[] = '    ' . self::altyazi($k, $sikkeUrl, $secilen);
+        $satir[] = '    ' . self::altyazi($k, $sikkeUrl, $secilen, $dil);
         $atif    = self::atif($secilen);
 
         if ($atif !== '') {

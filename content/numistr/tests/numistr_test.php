@@ -121,5 +121,25 @@ check('tarih: aynı çağ kısaltılır, farklı çağ açık', $H::tarihAraligi
     && $H::tarihAraligi(array('date_from' => -30, 'date_to' => 14)) === 'MÖ 30 – MS 14' && $H::tarihAraligi(array('date_to' => 120)) === 'MS 120');
 check('ilk harf büyük, kalan küçük (Python capitalize)', $H::ilkBuyuk('KYZIKOS (CYZICUS)') === 'Kyzikos (cyzicus)' && $H::ilkBuyuk('ışık') === 'Işık');
 
+// ------------------------------------------------------- EN yazı (1.1.0) ---
+check('dil: yazı dili önce', $H::dil('en-GB', 'tr-TR') === 'en' && $H::dil('tr-TR', 'en-GB') === 'tr');
+check('dil: * ise sayfa dili', $H::dil('*', 'en-GB') === 'en' && $H::dil('*', 'tr-TR') === 'tr' && $H::dil(null, null) === 'tr');
+check('EN tarih: MÖ', $H::tarihAraligiEn(array('date_from' => -261, 'date_to' => -246)) === '261–246 BC');
+check('EN tarih: MS', $H::tarihAraligiEn(array('date_from' => 128, 'date_to' => 132)) === 'AD 128–132');
+check('EN tarih: iki çağ', $H::tarihAraligiEn(array('date_from' => -30, 'date_to' => 14)) === '30 BC – AD 14');
+check('EN tarih: tek yıl ve boş', $H::tarihAraligiEn(array('date_from' => 324, 'date_to' => 324)) === 'AD 324'
+    && $H::tarihAraligiEn(array('date_from' => null, 'date_to' => -480)) === '480 BC' && $H::tarihAraligiEn(array()) === '');
+$enK = $H::kayit(array('title_tr' => 'RIC II Hadrian 474'), array('mint-name' => 'ephesus', 'material' => 'AR', 'start-date' => '128',
+    'end-date' => '132', 'obverse-desc' => 'Head of Hadrian bare right.', 'reverse-desc' => 'Diana Ephesia',
+    'obverse-desc-tr' => 'Hadrianus başı', 'reverse-desc-tr' => 'Efes Dianası', 'coin-id' => 'http://x/ric.2.hdn.474'));
+$sec = array(array('image_id' => 1, 'type' => 'on', 'credit' => 'ANS', 'license' => 'NC0'), array('image_id' => 2, 'type' => 'arka', 'credit' => 'ANS', 'license' => 'NC0'));
+check('coin-id kayda girer', $enK['coin_id'] === 'http://x/ric.2.hdn.474');
+$enH = $H::figurHtml($enK, 'https://x/en/c', $sec, $KOK, 'en');
+check('EN altyazı: metal, tarih, İngilizce betim', strpos($enH, 'Ephesus, AD 128–132, silver. Obverse: Head of Hadrian bare right. Reverse: Diana Ephesia.') !== false, $enH);
+check('EN alt metin', strpos($enH, 'alt="RIC II Hadrian 474 — Obverse"') !== false && strpos($enH, 'Ön yüz') === false && strpos($enH, 'Arka yüz') === false);
+check('EN figürde TR betim yok', strpos($enH, 'Hadrianus başı') === false);
+$trH = $H::figurHtml($enK, 'https://x/tr/c', $sec, $KOK);
+check('varsayılan TR değişmedi', strpos($trH, 'Ephesus, MS 128–132, gümüş. Ön yüz: Hadrianus başı. Arka yüz: Efes Dianası.') !== false, $trH);
+
 echo "\n$ok ok, $fail fail\n";
 exit($fail ? 1 : 0);

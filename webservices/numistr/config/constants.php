@@ -183,7 +183,7 @@ return [
         'created_by'     => (int) ($secrets['blog_admin_user_id'] ?? 0),
         // Blog ağacı: 8 Blog > 35 Semboller, 36 Anadolu Atlası, 37 Numizmatik, 38 Koleksiyonerin Köşesi,
         // 39 Sikkeler, 40 Tarihsel Anlatılar. Sikke kataloğu (ROOT_CAT_ID ağacı) bilerek DIŞARIDA.
-        'allowed_catids' => [35, 36, 37, 38, 39, 40],
+        'allowed_catids' => [35, 36, 37, 38, 39, 40, 107, 108, 109, 110, 111, 112], // TR + EN blog (1.24.0)
     ],
 
     // Üniversite öğrenci grup ID'si (ücretsiz Pro erişimi)

@@ -105,9 +105,14 @@ final class NumisTRBlogAdmin
             }
             $tagIds[$t] = $t;
         }
+        // 1.24.0: EN yazının TR eşi (o_associations). Yalnız en-GB yazıda; TR'nin kendisi doğrulanır (esDogrula).
+        $esId = $in['es_id'] ?? null;
+        if ($esId !== null && (!is_int($esId) || $esId <= 0 || $language !== 'en-GB')) {
+            return [null, 'es_id yalniz en-GB yazida pozitif tamsayi olabilir'];
+        }
 
         return [[
-            'title' => $title, 'alias' => $alias, 'catid' => $catid, 'state' => $state, 'language' => $language,
+            'es_id' => $esId, 'title' => $title, 'alias' => $alias, 'catid' => $catid, 'state' => $state, 'language' => $language,
             'introtext' => $intro, 'fulltext' => $full, 'metadesc' => $metadesc, 'tags' => array_values($tagIds),
         ], null];
     }
@@ -124,6 +129,64 @@ final class NumisTRBlogAdmin
             ->where($db->quoteName('alias') . ' = ' . $db->quote($alias))
             ->setLimit(1);
         return (int) $db->setQuery($q)->loadResult();
+    }
+
+    /** Joomla AdminModel::save ile aynı anahtar: md5(json_encode([dil => kimlik])), en-GB önce (dil sırası). */
+    public static function iliskiAnahtari(int $trId, int $enId): string
+    {
+        return md5(json_encode(['en-GB' => $enId, 'tr-TR' => $trId]));
+    }
+
+    /** TR eş yayında kullanılabilir mi? Null = uygun; dizge = hata. */
+    public static function esDogrula($db, int $esId): ?string
+    {
+        $q = $db->getQuery(true)
+            ->select($db->quoteName(['language', 'state']))
+            ->from($db->quoteName('#__content'))
+            ->where($db->quoteName('id') . ' = ' . $esId);
+        $r = $db->setQuery($q)->loadAssoc();
+        if (!$r) {
+            return 'es_id makalesi yok: ' . $esId;
+        }
+        return $r['language'] === 'tr-TR' ? null : 'es_id tr-TR dilinde degil: ' . $esId;
+    }
+
+    /**
+     * TR ↔ EN ilişkisini yazar. Zaten bu ikili bağlıysa dokunmaz; iki taraftan biri BAŞKA bir ilişkideyse sessizce
+     * ezmez, hata verir. Döner: 'baglandi' | 'zaten_bagli'.
+     */
+    public static function iliskilendir($db, int $trId, int $enId): string
+    {
+        $baglam = 'com_content.item';
+        $anahtar = self::iliskiAnahtari($trId, $enId);
+        $q = $db->getQuery(true)
+            ->select($db->quoteName(['id', 'key']))
+            ->from($db->quoteName('#__associations'))
+            ->where($db->quoteName('context') . ' = ' . $db->quote($baglam))
+            ->where($db->quoteName('id') . ' IN (' . $trId . ',' . $enId . ')');
+        $mevcut = $db->setQuery($q)->loadAssocList() ?: [];
+        $ayni = 0;
+        foreach ($mevcut as $m) {
+            if ($m['key'] !== $anahtar) {
+                throw new \RuntimeException('makale ' . $m['id'] . ' baska bir iliskide; elle cozulmeli');
+            }
+            $ayni++;
+        }
+        if ($ayni === 2) {
+            return 'zaten_bagli';
+        }
+        $var = array_map('intval', array_column($mevcut, 'id'));
+        foreach ([$trId, $enId] as $id) {
+            if (in_array($id, $var, true)) {
+                continue;
+            }
+            $ekle = $db->getQuery(true)
+                ->insert($db->quoteName('#__associations'))
+                ->columns($db->quoteName(['id', 'context', 'key']))
+                ->values($id . ',' . $db->quote($baglam) . ',' . $db->quote($anahtar));
+            $db->setQuery($ekle)->execute();
+        }
+        return 'baglandi';
     }
 
     /** Var olmayan etiket kimlikleri (yazımdan ÖNCE denetlenir; yarım etiketli yazı olmasın). */

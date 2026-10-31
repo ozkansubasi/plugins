@@ -75,6 +75,11 @@ class BlogAdminController
                 return;
             }
 
+            if ($d['es_id'] !== null && ($esHata = NumisTRBlogAdmin::esDogrula($db, $d['es_id'])) !== null) {
+                $response->sendError(400, 'Bad Request', $esHata);
+                return;
+            }
+
             // Güvenli varsayılan: yalnız dry_run === false gerçek yazım yapar.
             $dryRun = !(array_key_exists('dry_run', $body) && $body['dry_run'] === false);
             if ($dryRun) {
@@ -85,8 +90,9 @@ class BlogAdminController
             }
 
             [$id, $islem] = NumisTRBlogAdmin::kaydet($d, $mevcut, (int) ($cfg['created_by'] ?? 0));
+            $iliski = $d['es_id'] !== null ? NumisTRBlogAdmin::iliskilendir($db, $d['es_id'], $id) : null;
             $response->sendJson(['data' => ['dry_run' => false, 'islem' => $islem, 'id' => $id, 'alias' => $d['alias'],
-                'catid' => $d['catid'], 'state' => $d['state'], 'etiket' => count($d['tags'])]], true);
+                'catid' => $d['catid'], 'state' => $d['state'], 'etiket' => count($d['tags']), 'iliski' => $iliski]], true);
         } catch (\Throwable $e) {
             // Çağıran HMAC ile doğrulanmış yönetici: hata metni gizlenmez (sessiz varsayılan hatayı maskeler dersi).
             $response->sendServerError($e);

@@ -34,6 +34,14 @@ $ok = ['title' => 'Büyük Antiokhos', 'alias' => 'buyuk-antiokhos-ve-magnesia',
 [$n, $h] = NumisTRBlogAdmin::normalize($ok, $izinli);
 check('geçerli gövdede hata yok', $h === null, (string) $h);
 check('geçerli gövde', $n['alias'] === 'buyuk-antiokhos-ve-magnesia' && $n['state'] === 1 && $n['language'] === 'tr-TR');
+check('es_id verilmezse null', $n['es_id'] === null);
+[$en, $enH] = NumisTRBlogAdmin::normalize(array_merge($ok, ['language' => 'en-GB', 'es_id' => 34030]), $izinli);
+check('en-GB yazıda es_id kabul', $enH === null && $en['es_id'] === 34030, (string) $enH);
+[, $trH] = NumisTRBlogAdmin::normalize(array_merge($ok, ['es_id' => 34030]), $izinli);
+check('tr-TR yazıda es_id ret', $trH !== null);
+[, $tipH] = NumisTRBlogAdmin::normalize(array_merge($ok, ['language' => 'en-GB', 'es_id' => '34030']), $izinli);
+check('dizge es_id ret', $tipH !== null);
+check('ilişki anahtarı Joomla biçiminde', NumisTRBlogAdmin::iliskiAnahtari(13036, 33943) === md5('{"en-GB":33943,"tr-TR":13036}'));
 check('yinelenen etiket tekilleşir', $n['tags'] === [412, 530], json_encode($n['tags']));
 
 $hata = function (array $degisim) use ($ok, $izinli): ?string {
