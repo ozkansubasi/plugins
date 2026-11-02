@@ -81,23 +81,26 @@ return [
     'tools' => [
         'max_iterations'  => 3,
         'result_limit'    => 10,
-        // terminology RAG (Qdrant numistr_kb via n8n); returns raw chunks, never a
+        // terminology RAG (Qdrant numistr_kb_g via n8n); returns raw chunks, never a
         // pre-written answer -- see claudedocs/assistant/grounding-fix-2026-09-06.md
         'kb_webhook_url'  => 'https://n8n.aetelekom.com/webhook/numistr-kb-query',
-        // full-text RAG over blog + settlement articles (Qdrant numistr_site via n8n)
+        // full-text RAG over blog + settlement articles (Qdrant numistr_site_g via n8n)
         'site_search_url' => 'https://n8n.aetelekom.com/webhook/numistr-site-search',
-        // Relevance gates. Measured 2026-09-06 (text-embedding-3-small, cosine):
-        //   numistr_site  real hits 0.47-0.75, pure noise 0.30-0.32  -> 0.45
-        //   numistr_kb    real terms 0.455-0.541, invented term 0.417 -> 0.45
-        // Below the gate we drop the chunk entirely: an off-topic chunk that reaches
-        // the model gets cited as a source, which is worse than having no source.
-        'site_search_min_score' => 0.45,
-        // 0.45 -> 0.35 (2026-09-08). The higher value was an attempt to keep
-        // invented terms out by score alone, which cannot work: real and
-        // invented score ranges overlap. The word gate in searchKb() does that
-        // job now, so this can come down and stop refusing genuine questions.
-        // Measured: real answerable 86/120 -> 101/120, invented 6/30 -> 0/30.
-        'kb_search_min_score'   => 0.35,
+        // Relevance gates, applied PER RESULT (a chunk below the gate is dropped).
+        // 2026-11-03: embeddings moved OpenAI text-embedding-3-small -> Gemini
+        // gemini-embedding-001 (1536). Gemini cosine scores sit in a narrow
+        // ~0.6-0.83 band, so the old values (site 0.45, kb 0.35) would pass
+        // everything. Re-measured on the same Sept question sets, per result
+        // (runbook claudedocs/deploy/runbooks/2026-11-02-gemini-gomme-gecisi.md 2a):
+        //   site 0.45 OpenAI: real 4.73 sources/question, 0/15 empty; invented 6/10 get sources
+        //   site 0.68 Gemini: real 4.40 sources/question, 0/15 empty; invented 4/10 get sources
+        //   kb   0.35 OpenAI: real 7.34 chunks/term, 0/100 empty; invented 3/10 get chunks
+        //   kb   0.62 Gemini: real 7.90 chunks/term, 0/100 empty; invented 3/10 get chunks
+        // Score alone cannot separate real from invented terms; the word gate in
+        // searchKb() stays the real filter. Below the gate we drop the chunk entirely:
+        // an off-topic chunk that reaches the model gets cited as a source.
+        'site_search_min_score' => 0.68,
+        'kb_search_min_score'   => 0.62,
         'kb_timeout'      => 20,
     ],
 
