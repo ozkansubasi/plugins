@@ -141,5 +141,16 @@ check('EN figürde TR betim yok', strpos($enH, 'Hadrianus başı') === false);
 $trH = $H::figurHtml($enK, 'https://x/tr/c', $sec, $KOK);
 check('varsayılan TR değişmedi', strpos($trH, 'Ephesus, MS 128–132, gümüş. Ön yüz: Hadrianus başı. Arka yüz: Efes Dianası.') !== false, $trH);
 
+// ------------------------------------------------------- 1.2.0: API istemcisi kök/adres ---
+check('siteKoku site: aynen', $H::siteKoku('https://www.numistr.org/', false) === 'https://www.numistr.org');
+check('siteKoku api: /api kırpılır', $H::siteKoku('https://www.numistr.org/api/', true) === 'https://www.numistr.org');
+check('siteKoku api: zaten kök', $H::siteKoku('https://www.numistr.org/', true) === 'https://www.numistr.org');
+check('siteKoku site: /api dokunulmaz', $H::siteKoku('https://www.numistr.org/api', false) === 'https://www.numistr.org/api');
+check('siteAdresi api: yol düzelir', $H::siteAdresi('https://www.numistr.org/api/tr/anatolian-coins/lydia-coins/30671-x', true) === 'https://www.numistr.org/tr/anatolian-coins/lydia-coins/30671-x');
+check('siteAdresi api: index.php yolu', $H::siteAdresi('https://www.numistr.org/api/index.php/tr/x', true) === 'https://www.numistr.org/index.php/tr/x');
+check('siteAdresi api: temiz adres değişmez', $H::siteAdresi('https://www.numistr.org/tr/x', true) === 'https://www.numistr.org/tr/x');
+check('siteAdresi api: apis... dokunulmaz', $H::siteAdresi('https://www.numistr.org/apiary/x', true) === 'https://www.numistr.org/apiary/x');
+check('siteAdresi site: dokunulmaz', $H::siteAdresi('https://www.numistr.org/api/tr/x', false) === 'https://www.numistr.org/api/tr/x');
+
 echo "\n$ok ok, $fail fail\n";
 exit($fail ? 1 : 0);

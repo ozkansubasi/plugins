@@ -27,6 +27,11 @@ if (file_exists(__DIR__ . '/helpers/ImageLicenseHelper.php')) {
     require_once __DIR__ . '/helpers/ImageLicenseHelper.php';
 }
 
+// Blog figür kısa kodu (1.24.2) — yazı ucunda figür kurar, özetlerden siler; yoksa davranış eskisi gibi.
+if (file_exists(__DIR__ . '/helpers/ArticleFigureHelper.php')) {
+    require_once __DIR__ . '/helpers/ArticleFigureHelper.php';
+}
+
 // Locations helper (optional - locations feature not fully deployed yet)
 if (file_exists(__DIR__ . '/helpers/LocationsHelper.php')) {
     require_once __DIR__ . '/helpers/LocationsHelper.php';
@@ -2893,9 +2898,13 @@ class PlgWebservicesNumistr extends CMSPlugin
 
             $items = [];
             foreach ($rows as $row) {
-                $intro = strip_tags($row['introtext'] ?? '');
+                $introRaw = (string)($row['introtext'] ?? '');
+                if (class_exists('ArticleFigureHelper')) {
+                    $introRaw = ArticleFigureHelper::stripCodes($introRaw);
+                }
+                $intro = strip_tags($introRaw);
                 $intro = mb_substr($intro, 0, 200, 'UTF-8');
-                if (mb_strlen(strip_tags($row['introtext'] ?? ''), 'UTF-8') > 200) {
+                if (mb_strlen(strip_tags($introRaw), 'UTF-8') > 200) {
                     $intro .= '...';
                 }
 
@@ -3007,7 +3016,11 @@ class PlgWebservicesNumistr extends CMSPlugin
             $categoryName = $db->loadResult() ?: 'Blog';
 
             // Strip HTML and limit intro text to 150 characters
-            $intro = strip_tags($article['introtext'] ?? '');
+            $introRaw = (string)($article['introtext'] ?? '');
+            if (class_exists('ArticleFigureHelper')) {
+                $introRaw = ArticleFigureHelper::stripCodes($introRaw);
+            }
+            $intro = strip_tags($introRaw);
             $intro = mb_substr($intro, 0, 150, 'UTF-8');
             if (mb_strlen($intro, 'UTF-8') >= 150) {
                 $intro .= '...';
@@ -3096,6 +3109,7 @@ class PlgWebservicesNumistr extends CMSPlugin
                     $db->quoteName('ct.introtext'),
                     $db->quoteName('ct.fulltext'),
                     $db->quoteName('ct.catid'),
+                    $db->quoteName('ct.language'),
                     $db->quoteName('ct.created'),
                     $db->quoteName('ct.modified'),
                     $db->quoteName('cat.title', 'category_name'),
@@ -3132,6 +3146,11 @@ class PlgWebservicesNumistr extends CMSPlugin
             // Combine intro and full text
             $content = trim($article['introtext'] ?? '') . "\n\n" . trim($article['fulltext'] ?? '');
             $content = trim($content);
+
+            // B14 figür kısa kodu: plg_content_numistr ile figür kurulur, kalan kod silinir (1.24.2)
+            if (class_exists('ArticleFigureHelper')) {
+                $content = ArticleFigureHelper::render($content, (int)$article['id'], (string)($article['language'] ?? ''));
+            }
 
             $payload = [
                 'data' => [

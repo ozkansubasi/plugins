@@ -296,6 +296,25 @@ class PlgNumistrContentHelper
         return $bas !== '' ? $bas : $son;
     }
 
+    /**
+     * Görsel adresinin kökü: site kökü, sondaki `/` olmadan. API istemcisinde `Uri::root()` site kökünü vermeli; yine de
+     * sonuna `/api` eklenmiş gelirse kırpılır (görsel `com_numistr` site uç noktasından sunulur).
+     */
+    public static function siteKoku($kok, $api = false)
+    {
+        $kok = rtrim((string) $kok, '/');
+
+        return $api ? (string) preg_replace('~/api$~', '', $kok) : $kok;
+    }
+
+    /** API istemcisinde site bağlantısının yoluna `/api` karışmışsa çıkarır (`https://host/api/tr/...` → `https://host/tr/...`). */
+    public static function siteAdresi($url, $api = false)
+    {
+        $url = (string) $url;
+
+        return $api ? (string) preg_replace('~^(https?://[^/]+)/api(?=/|$)~', '$1', $url) : $url;
+    }
+
     /** Python str.capitalize(): ilk harf büyük, kalanı küçük. */
     public static function ilkBuyuk($s)
     {

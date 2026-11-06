@@ -9,8 +9,11 @@
  * Görsel ve katalog verisi o anda DB'den okunur; lisans kapısı her gösterimde işler (yalnız `license_ok` = 1 ve
  * kaynağı erişilebilir görsel). Gösterilebilir görsel kalmazsa ya da sikke yayımda değilse figür düşer (yorum satırı kalır).
  * Önceden figür HTML'i makaleye donmuş olarak gömülüyordu: lisans sonradan kapansa da görünmeye devam ediyordu.
- * Site dışı istemcide (yönetim, API, Smart Search dizinleme) kod yalnız silinir — DB okunmaz.
+ * Site dışı istemcide (yönetim, Smart Search dizinleme) kod yalnız silinir — DB okunmaz.
  * 1.1.0: EN yazıda altyazı ve alt metin İngilizce, bağlantı aynı coin-id'li EN sikke sayfası (yoksa TR sayfa).
+ * 1.2.0 (2026-11-07): API istemcisinde de figür kurulur — mobil uygulamanın yazı ucu (`/v1/articles/{id}`, plg_webservices_numistr
+ *   1.24.2) bu eklentiyi doğrudan çağırır; önceden uygulama kısa kodu ham metin olarak gösteriyordu. Görsel adresi site kökünden
+ *   (API'de `Uri::root()` sonuna `/api` eklenmiş gelirse kırpılır).
  */
 
 defined('_JEXEC') or die;
@@ -43,7 +46,7 @@ class PlgContentNumistr extends CMSPlugin
             return;
         }
 
-        if (!$this->app || !$this->app->isClient('site')) {
+        if (!$this->app || !($this->app->isClient('site') || $this->app->isClient('api'))) {
             $article->text = PlgNumistrContentHelper::degistir($article->text, function () {
                 return '';
             });
@@ -75,7 +78,8 @@ class PlgContentNumistr extends CMSPlugin
                 return sprintf($yorum, 'gösterilebilir görsel yok');
             }
 
-            return PlgNumistrContentHelper::figurHtml($k['kayit'], $k['url'], $secilen, rtrim(Uri::root(), '/'), $dil);
+            return PlgNumistrContentHelper::figurHtml($k['kayit'], $k['url'], $secilen,
+                PlgNumistrContentHelper::siteKoku(Uri::root(), $this->app->isClient('api')), $dil);
         } catch (\Throwable $e) {
             return sprintf($yorum, 'hata');   // figür yoksa yazı yine açılır (lisans açısından güvenli taraf)
         }
@@ -142,6 +146,8 @@ class PlgContentNumistr extends CMSPlugin
                     false, Route::TLS_IGNORE, true);
             }
         }
+
+        $url = PlgNumistrContentHelper::siteAdresi($url, $this->app && $this->app->isClient('api'));
 
         return $this->kayitlar[$anahtar] = array('kayit' => $kayit, 'url' => $url);
     }
