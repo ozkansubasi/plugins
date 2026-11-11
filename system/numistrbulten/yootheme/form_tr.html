@@ -1,0 +1,33 @@
+<form class="uk-form uk-panel js-numistr-bulten" data-dil="tr" novalidate>
+  <div class="uk-grid-small uk-child-width-expand@s" uk-grid>
+    <div><input class="el-input uk-input uk-form-large uk-form-blank" type="email" name="email" maxlength="254" autocomplete="email" placeholder="E-bülten için e-posta adresiniz" aria-label="E-bülten için e-posta adresiniz" required></div>
+    <div class="uk-width-auto@s"><button class="el-button uk-button uk-button-default uk-button-large" type="submit">Abone ol</button></div>
+  </div>
+  <div style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden" aria-hidden="true"><label>Web <input type="text" name="web_site" tabindex="-1" autocomplete="off"></label></div>
+  <label class="uk-display-block uk-text-small uk-margin-small-top"><input class="uk-checkbox" type="checkbox" name="onay" value="1" required> Aylık e-bülteni almak istiyorum. <a href="/tr/kvkk-ve-gizlilik-politikasi">Gizlilik Politikası</a>’nı okudum; istediğim zaman abonelikten çıkabilirim.</label>
+  <div class="uk-text-small uk-margin-small-top js-numistr-bulten-mesaj" role="status" aria-live="polite"></div>
+</form>
+<script>
+(function () {
+  var M = {"tr": {"tamam": "Teşekkürler! Aboneliğinizi tamamlamak için e-postanıza gönderdiğimiz onay bağlantısına tıklayın.", "gecersiz_eposta": "Lütfen geçerli bir e-posta adresi yazın.", "onay_yok": "Devam etmek için onay kutusunu işaretleyin.", "sinir": "Çok fazla deneme yapıldı. Lütfen biraz sonra tekrar deneyin.", "servis": "Aboneliğinizi şu an kaydedemedik. Lütfen daha sonra tekrar deneyin.", "gonderiliyor": "Gönderiliyor…"}, "en": {"tamam": "Thank you! Please click the confirmation link we have sent to your inbox to complete your subscription.", "gecersiz_eposta": "Please enter a valid email address.", "onay_yok": "Please tick the consent box to continue.", "sinir": "Too many attempts. Please try again later.", "servis": "We could not save your subscription right now. Please try again later.", "gonderiliyor": "Sending…"}};
+  document.querySelectorAll('form.js-numistr-bulten:not([data-bagli])').forEach(function (f) {
+    f.setAttribute('data-bagli', '1');
+    var m = M[f.getAttribute('data-dil')] || M.en, cikti = f.querySelector('.js-numistr-bulten-mesaj'), dugme = f.querySelector('button[type=submit]');
+    function yaz(t) { cikti.textContent = t; }
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!f.email.value.trim() || !f.email.checkValidity()) { yaz(m.gecersiz_eposta); f.email.focus(); return; }
+      if (!f.onay.checked) { yaz(m.onay_yok); f.onay.focus(); return; }
+      dugme.disabled = true; yaz(m.gonderiliyor);
+      var veri = new FormData(f); veri.set('email', f.email.value.trim()); veri.set('dil', f.getAttribute('data-dil'));
+      fetch('/index.php?option=com_ajax&plugin=numistrbulten&format=raw&task=subscribe', { method: 'POST', body: veri, credentials: 'same-origin' })
+        .then(function (r) { return r.json().catch(function () { return { ok: false, hata: 'servis' }; }); })
+        .then(function (j) {
+          if (j && j.ok) { yaz(m.tamam); f.reset(); } else { yaz(m[j && j.hata] || m.servis); }
+          dugme.disabled = false;
+        })
+        .catch(function () { yaz(m.servis); dugme.disabled = false; });
+    });
+  });
+})();
+</script>

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>PLG_SYSTEM_NUMISTRBULTEN</name>
+    <author>NumisTR</author>
+    <creationDate>November 2026</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>https://www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_NUMISTRBULTEN_XML_DESCRIPTION</description>
+
+    <files>
+        <filename plugin="numistrbulten">numistrbulten.php</filename>
+        <filename>helper.php</filename>
+        <filename>index.html</filename>
+        <folder>language</folder>
+    </files>
+
+    <languages>
+        <language tag="en-GB">language/en-GB/plg_system_numistrbulten.ini</language>
+        <language tag="en-GB">language/en-GB/plg_system_numistrbulten.sys.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrbulten.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrbulten.sys.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field name="api_url" type="url" label="PLG_SYSTEM_NUMISTRBULTEN_API_URL" default="https://esemtipi.com/api/index.php" filter="url" />
+                <field name="api_key" type="password" label="PLG_SYSTEM_NUMISTRBULTEN_API_KEY" description="PLG_SYSTEM_NUMISTRBULTEN_API_KEY_DESC" filter="raw" autocomplete="off" />
+                <field name="list_uid_en" type="text" label="PLG_SYSTEM_NUMISTRBULTEN_LIST_EN" description="PLG_SYSTEM_NUMISTRBULTEN_LIST_DESC" />
+                <field name="list_uid_tr" type="text" label="PLG_SYSTEM_NUMISTRBULTEN_LIST_TR" description="PLG_SYSTEM_NUMISTRBULTEN_LIST_DESC" />
+                <field name="per_ip_limit" type="number" label="PLG_SYSTEM_NUMISTRBULTEN_PER_IP" default="5" min="0" />
+                <field name="global_limit" type="number" label="PLG_SYSTEM_NUMISTRBULTEN_GLOBAL" default="300" min="0" />
+                <field name="allowed_hosts" type="text" label="PLG_SYSTEM_NUMISTRBULTEN_HOSTS" default="www.numistr.org,numistr.org" />
+            </fieldset>
+        </fields>
+    </config>
+</extension>
