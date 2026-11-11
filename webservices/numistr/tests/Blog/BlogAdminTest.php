@@ -68,3 +68,12 @@ $sabit  = strpos($kaynak, "'JPATH_COMPONENT' =>");
 $model  = strpos($kaynak, "createModel('Article'");
 check('1.23.1: JPATH_COMPONENT modelden önce tanımlanıyor', $sabit !== false && $model !== false && $sabit < $model);
 check('1.23.1: sabit yalnız tanımsızsa tanımlanıyor', str_contains($kaynak, 'if (!defined($sabit))'));
+
+// ------------------------------------------------- giriş görseli (1.24.3) ---
+$gg = json_decode(NumisTRBlogAdmin::girisGorseli('<p>Özet</p>', "<h2>B</h2>\n{numistr_gorsel variant=11615 gorsel=29182,29183}\n<p>x</p>{numistr_gorsel variant=2 gorsel=5}", 'Tanrının eli'), true);
+check('ilk figürün ilk görseli', ($gg['image_intro'] ?? '') === 'https://www.numistr.org/index.php?option=com_numistr&view=gorsel&format=raw&id=29182&wm=0', json_encode($gg));
+check('alt metni başlık', ($gg['image_intro_alt'] ?? '') === 'Tanrının eli');
+check('figür girişteyse de bulunur', strpos(NumisTRBlogAdmin::girisGorseli('{numistr_gorsel gorsel=77}', '', 't'), 'id=77&wm=0') !== false);
+check('figür yoksa {}', NumisTRBlogAdmin::girisGorseli('<p>a</p>', '<p>b</p>', 't') === '{}');
+check('gorsel parametresi yoksa {}', NumisTRBlogAdmin::girisGorseli('{numistr_gorsel variant=5}', '', 't') === '{}');
+check('json geçerli, eğik çizgi kaçışsız', json_decode(NumisTRBlogAdmin::girisGorseli('{numistr_gorsel gorsel=1}', '', 'a"b'), true)['image_intro_alt'] === 'a"b');

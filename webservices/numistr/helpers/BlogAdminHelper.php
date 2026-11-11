@@ -205,6 +205,23 @@ final class NumisTRBlogAdmin
     }
 
     /**
+     * 1.24.3 (2026-11-12, C11): yeni yazının giriş görseli = ilk figürün ilk görseli (`{numistr_gorsel … gorsel=ID…}`),
+     * 480 px filigransız küçük görsel (com_numistr `wm=0`). Ana sayfa kartları ve blog listesi bunu gösterir.
+     * Figür yoksa '{}' (görselsiz). Güncellemede çağrılmaz: elle seçilmiş görsel ezilmez.
+     */
+    public static function girisGorseli(string $introtext, string $fulltext, string $title): string
+    {
+        if (!preg_match('/\{numistr_gorsel\b[^}]*?\bgorsel=(\d+)/', $introtext . "\n" . $fulltext, $m)) {
+            return '{}';
+        }
+
+        return json_encode([
+            'image_intro'     => 'https://www.numistr.org/index.php?option=com_numistr&view=gorsel&format=raw&id=' . (int) $m[1] . '&wm=0',
+            'image_intro_alt' => $title,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
      * Makaleyi com_content yönetici modeliyle kaydeder (yeni ya da güncelleme). Döner: [id, islem].
      * $createdBy: yeni makalenin yazarı (BLOG_ADMIN.created_by; API isteğinde Joomla oturumu yok).
      */
@@ -241,7 +258,8 @@ final class NumisTRBlogAdmin
         ];
         if ($mevcutId === 0) {
             // NOT NULL sütunlar formda varsayılanla gelir; modelin doğrudan çağrısında biz veririz
-            $veri += ['created_by' => $createdBy, 'metakey' => '', 'images' => '{}', 'urls' => '{}',
+            $veri += ['created_by' => $createdBy, 'metakey' => '',
+                      'images' => self::girisGorseli($d['introtext'], $d['fulltext'], $d['title']), 'urls' => '{}',
                       'attribs' => '{}', 'metadata' => '{}', 'featured' => 0];
         }
         if ($mevcutId === 0 && $d['state'] === 1) {
