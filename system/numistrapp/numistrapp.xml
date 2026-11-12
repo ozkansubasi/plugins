@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>PLG_SYSTEM_NUMISTRAPP</name>
+    <author>NumisTR</author>
+    <creationDate>November 2026</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>https://www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_NUMISTRAPP_XML_DESCRIPTION</description>
+
+    <files>
+        <filename plugin="numistrapp">numistrapp.php</filename>
+        <filename>index.html</filename>
+        <folder>language</folder>
+    </files>
+
+    <languages>
+        <language tag="en-GB">language/en-GB/plg_system_numistrapp.ini</language>
+        <language tag="en-GB">language/en-GB/plg_system_numistrapp.sys.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrapp.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrapp.sys.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field name="gtm_id" type="text" label="PLG_SYSTEM_NUMISTRAPP_GTM" description="PLG_SYSTEM_NUMISTRAPP_GTM_DESC" default="GTM-TRH8ZR6M" filter="string" />
+            </fieldset>
+        </fields>
+    </config>
+</extension>
