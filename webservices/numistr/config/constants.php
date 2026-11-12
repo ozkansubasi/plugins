@@ -268,6 +268,13 @@ return [
         // yapabildiği için sınır bilerek geniş; asıl koruma günlük tavan.
         'catalog' => 120,
 
+        // /v1/variants/{id}/images AYRI kovada (1.24.4, 12 Kas 2026). Uygulamanın
+        // listesi sayfa başına 1 liste + 20 küçük görsel isteği yapıyor; hepsi
+        // 'catalog' kovasındayken 6. kaydırmada (126. istek) 429 geliyor ve uygulama
+        // listeyi "Bir sorun oluştu" ile siliyordu (canlıda ölçüldü). Ayrı kova:
+        // görsel sınırı aşılsa da liste yüklenir, yalnız bazı küçük görseller gelmez.
+        'catalog_images' => 600,
+
         // Özne başına GÜNLÜK tavan (ADR-005). Özne = Bearer jeton parmak izi,
         // yoksa IP. Normal uygulama kullanımı bunun çok altında kalır; toptan
         // kopyalama ilk gün çarpar. 0 = kapalı.

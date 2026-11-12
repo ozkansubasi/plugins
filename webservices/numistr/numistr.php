@@ -1575,7 +1575,9 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantImages(string $uri, int $variantId): void
     {
         $this->dbg('variants-images', $uri);
-        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60);
+        // Kendi kovası (1.24.4): liste sayfası başına 20 küçük görsel isteği liste
+        // isteğinin dakika sınırını tüketmesin. Günlük tavan ortak kalır.
+        $this->checkRateLimit('catalog_images', $this->config['RATE_LIMITS']['catalog_images'] ?? 600);
         
         try {
             $app = Factory::getApplication();
