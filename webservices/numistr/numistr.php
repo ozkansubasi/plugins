@@ -1169,7 +1169,8 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantsList(string $uri): void
     {
         $this->dbg('variants-index', $uri);
-        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60);
+        // 1.25.0 (M36): 429'da error_code + retry_after (+ Retry-After başlığı); uygulama kısa bekleyip yeniden dener.
+        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60, 'RATE_LIMITED');
         
         try {
             $app = Factory::getApplication();
@@ -1578,7 +1579,7 @@ class PlgWebservicesNumistr extends CMSPlugin
         $this->dbg('variants-images', $uri);
         // Kendi kovası (1.24.4): liste sayfası başına 20 küçük görsel isteği liste
         // isteğinin dakika sınırını tüketmesin. Günlük tavan ortak kalır.
-        $this->checkRateLimit('catalog_images', $this->config['RATE_LIMITS']['catalog_images'] ?? 600);
+        $this->checkRateLimit('catalog_images', $this->config['RATE_LIMITS']['catalog_images'] ?? 600, 'RATE_LIMITED');
         
         try {
             $app = Factory::getApplication();
@@ -1627,7 +1628,7 @@ class PlgWebservicesNumistr extends CMSPlugin
     private function handleVariantItem(string $uri, string $token): void
     {
         $this->dbg('variants-item', $uri);
-        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60);
+        $this->checkRateLimit('catalog', $this->config['RATE_LIMITS']['catalog'] ?? 60, 'RATE_LIMITED');
         
         try {
             $app = Factory::getApplication();

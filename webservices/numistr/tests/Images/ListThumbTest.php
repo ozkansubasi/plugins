@@ -67,3 +67,11 @@ check('attachListThumbs: sıra coin_id + ordering', strpos($at, "ci.ordering') .
 check('attachListThumbs: thumb_url = url_raw ile aynı (wm 0, mutlak)', strpos($at, "buildImageUrl((int)\$p['image_id'], 0, 1)") !== false);
 check('attachListThumbs: sorgu hatası listeyi düşürmez', strpos($at, 'catch (\Throwable $e)') !== false);
 check('attachListThumbs: sikke-gorsel-url süzgeci görsel ucuyla aynı', strpos($at, "stripos(\$u, 'option=com_numistr') === false") !== false);
+
+// 1.25.0 (M36): katalog uçları 429'da error_code + retry_after verir (uygulama kısa bekleyip yeniden dener)
+foreach (['handleVariantsList', 'handleVariantImages', 'handleVariantItem'] as $h) {
+    $s  = strpos($main, 'private function ' . $h . '(');
+    $e  = strpos($main, 'private function ', $s + 10);
+    $hb = $s === false ? '' : substr($main, $s, $e - $s);
+    check($h . ': 429 gövdesinde retry_after (RATE_LIMITED)', (bool) preg_match("~checkRateLimit\\('catalog(_images)?', [^;]+, 'RATE_LIMITED'\\);~", $hb));
+}
