@@ -1316,6 +1316,7 @@ class PlgWebservicesNumistr extends CMSPlugin
             $q->order($orderClause)->setLimit($perPage, $offset);
             $db->setQuery($q);
             $rows = $db->loadAssocList() ?: [];
+            $rows = $this->attachListThumbs($db, $rows);
 
             $totalPages = (int)ceil($total / $perPage);
             $next = ($offset + $perPage < $total) ? $page + 1 : null;
@@ -2217,6 +2218,72 @@ class PlgWebservicesNumistr extends CMSPlugin
             + NumisTRImageSign::query($imageId, $userId, (int) ($cfg['ttl'] ?? 900), (string) $cfg['secret']);
         $path = '/index.php?' . http_build_query($qs);
         return $abs === 1 ? rtrim(Uri::root(), '/') . $path : $path;
+    }
+
+    /**
+     * 1.25.0 (M36, 13 Kas 2026) — liste satırlarına küçük görsel: `thumb_url` (480 px önizleme, filigransız, mutlak;
+     * görsel ucundaki `url_raw` ile aynı) + `thumb_remote_url`. Seçim getVariantImages ile aynı kurallar
+     * (NumisTRImageLicense::firstVisiblePerCoin). Sayfa başına iki toplu sorgu; uygulama sikke başına görsel isteği atmaz.
+     * Eklemeli alan: eski uygulama sürümleri yok sayar. Sorgu başarısızsa alanlar null, liste yine döner.
+     */
+    private function attachListThumbs($db, array $rows): array
+    {
+        $ids = [];
+        foreach ($rows as $r) {
+            $id = (int)($r['article_id'] ?? 0);
+            if ($id > 0) { $ids[$id] = true; }
+        }
+
+        $picks = [];
+        if ($ids && class_exists('NumisTRImageLicense')) {
+            try {
+                $idSql = implode(',', array_keys($ids));
+                $q = $db->getQuery(true)
+                    ->select([
+                        $db->quoteName('ci.coin_id'),
+                        $db->quoteName('ci.image_id'),
+                        $db->quoteName('ci.remote_url'),
+                        $db->quoteName('ci.license'),
+                        $db->quoteName('ci.license_ok'),
+                        $db->quoteName('ci.source_unavailable'),
+                    ])
+                    ->from($db->quoteName('coins_images', 'ci'))
+                    ->where($db->quoteName('ci.coin_id') . ' IN (' . $idSql . ')')
+                    ->order([$db->quoteName('ci.coin_id') . ' ASC', $db->quoteName('ci.ordering') . ' ASC']);
+                $db->setQuery($q);
+                $imgRows = $db->loadAssocList() ?: [];
+
+                $customUrls = [];
+                $q2 = $db->getQuery(true)
+                    ->select([$db->quoteName('v.item_id'), $db->quoteName('v.value')])
+                    ->from($db->quoteName('#__fields', 'f'))
+                    ->join('INNER', $db->quoteName('#__fields_values', 'v') . ' ON ' . $db->quoteName('v.field_id') . ' = ' . $db->quoteName('f.id'))
+                    ->where($db->quoteName('f.name') . ' = ' . $db->quote('sikke-gorsel-url'))
+                    ->where($db->quoteName('v.item_id') . ' IN (' . implode(',', array_map([$db, 'quote'], array_map('strval', array_keys($ids)))) . ')');
+                $db->setQuery($q2);
+                foreach (($db->loadAssocList() ?: []) as $cv) {
+                    $u = trim((string)($cv['value'] ?? ''));
+                    // getVariantImages ile aynı süzgeç
+                    if ($u !== '' && preg_match('~^https?://~i', $u) && stripos($u, 'option=com_numistr') === false) {
+                        $customUrls[(int)$cv['item_id']] = $u;
+                    }
+                }
+
+                $picks = NumisTRImageLicense::firstVisiblePerCoin(
+                    $imgRows, $customUrls, NumisTRImageLicense::enabled($this->config)
+                );
+            } catch (\Throwable $e) {
+                $picks = [];
+            }
+        }
+
+        foreach ($rows as $i => $r) {
+            $p = $picks[(int)($r['article_id'] ?? 0)] ?? null;
+            $rows[$i]['thumb_url'] = $p ? $this->buildImageUrl((int)$p['image_id'], 0, 1) : null;
+            $rows[$i]['thumb_remote_url'] = $p ? $p['remote_url'] : null;
+        }
+
+        return $rows;
     }
 
     private function getVariantImages($db, int $variantId, int $wmPref = 1, int $abs = 0, int $hdUserId = 0): array

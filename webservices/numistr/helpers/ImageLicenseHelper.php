@@ -90,6 +90,56 @@ class NumisTRImageLicense
         return $db->quoteName($alias . '.source_unavailable') . ' = 0';
     }
 
+    /**
+     * 1.25.0 (M36, 13 Kas 2026) — liste yanıtına küçük görsel: her sikkenin İLK GÖRÜNÜR görseli, görsel ucuyla
+     * (getVariantImages) aynı kurallarla seçilir. Uygulama eskiden liste sayfası başına 20 ayrı görsel isteği atıyordu.
+     *
+     * Saf. `$rows` coins_images satırları: coin_id, image_id, remote_url, license, license_ok, source_unavailable;
+     * her sikke içinde `ordering` sırasıyla gelmeli (sikkeler karışık olabilir). `$customUrls` [coin_id => sikke-gorsel-url];
+     * görsel ucundaki gibi YALNIZ sikkenin sıradaki ilk satırı (özgün $idx 0) görünürse onun remote_url'i olur.
+     *
+     * @return  array  [coin_id => ['image_id' => int, 'remote_url' => ?string]]; görünür görseli olmayan sikke yer almaz
+     */
+    public static function firstVisiblePerCoin(array $rows, array $customUrls, $hideUnverified)
+    {
+        $out  = array();
+        $seen = array(); // coin_id => o sikkede şimdiye dek görülen satır sayısı (özgün $idx)
+
+        foreach ($rows as $r) {
+            $coinId  = (int) ($r['coin_id'] ?? 0);
+            $imageId = (int) ($r['image_id'] ?? 0);
+
+            if ($coinId <= 0) {
+                continue;
+            }
+
+            $idx           = $seen[$coinId] ?? 0;
+            $seen[$coinId] = $idx + 1;
+
+            if (isset($out[$coinId]) || $imageId <= 0) {
+                continue;
+            }
+
+            if ($hideUnverified && !self::isVisible($r['license'] ?? null, $r['license_ok'] ?? null)) {
+                continue;
+            }
+
+            if (!self::isAvailable($r['source_unavailable'] ?? 0)) {
+                continue;
+            }
+
+            $remote = isset($r['remote_url']) && $r['remote_url'] !== '' ? (string) $r['remote_url'] : null;
+
+            if ($idx === 0 && !empty($customUrls[$coinId])) {
+                $remote = (string) $customUrls[$coinId];
+            }
+
+            $out[$coinId] = array('image_id' => $imageId, 'remote_url' => $remote);
+        }
+
+        return $out;
+    }
+
     /** Tanıma yanıtındaki (matches + near_matches) görsel kimlikleri. */
     public static function recognitionImageIds(array $formatted)
     {
