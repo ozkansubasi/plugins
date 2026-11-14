@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Billing (iyzico web subscription)
  * @subpackage  plg_system_numistrbilling
- * @version     1.4.0
+ * @version     1.5.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -20,6 +20,12 @@
  *   ...&task=housekeeping&key=…  (n8n cron: süresi geçmiş abonelikleri kapat)
  *   onUserBeforeDelete        (Joomla olayı: hesap silinmeden aktif iyzico aboneliğini iptal et — 1.3.0)
  *   housekeeping → reconcileWithApi (1.4.0: dönemi biten/bitecek abonelikleri iyzico okuma ucuyla uzlaştır)
+ *
+ * 1.5.0 (2026-11-14, kart deneme saldırısı sonrası): checkout / start / cardupdate önünde
+ *   koruma (guardReason): ödeme anahtarı (checkout_enabled), tek kullanımlık e-posta engeli,
+ *   hesap / IP / site geneli form açma sınırları, başarısız kart sınırı (numistr_billing_attempts),
+ *   start'ta aktif abonelik denetimi, isteğe bağlı Cloudflare Turnstile; checkout_form_auth
+ *   bildiriminin sonucu denemeye işlenir. Karar: src/CheckoutGuard.php (testli).
  */
 
 defined('_JEXEC') or die;
@@ -38,8 +44,9 @@ class PlgSystemNumistrbilling extends CMSPlugin
 
     protected $autoloadLanguage = true;
 
-    private const SESSION_NS = 'numistrbilling';
-    private const SOURCE     = 'iyzico';
+    private const SESSION_NS     = 'numistrbilling';
+    private const SOURCE         = 'iyzico';
+    private const ATTEMPTS_TABLE = 'numistr_billing_attempts'; // 1.5.0
 
     /**
      * com_ajax entry point: plugin=numistrbilling
@@ -99,6 +106,12 @@ class PlgSystemNumistrbilling extends CMSPlugin
             return null;
         }
 
+        $reason = $this->guardReason($user, 'subscribe');
+
+        if ($reason !== '') {
+            return $this->guardRedirect($reason, $user, 'subscribe', 'checkout');
+        }
+
         echo $this->renderBillingFormPage($user, $plan, [], [], $this->currencyFromInput());
         $this->app->close();
 
@@ -119,6 +132,20 @@ class PlgSystemNumistrbilling extends CMSPlugin
 
         if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !Session::checkToken('post')) {
             return $this->failRedirect('PLG_SYSTEM_NUMISTRBILLING_ERR_CSRF');
+        }
+
+        // 1.5.0 — form adımını atlayıp doğrudan POST edilse de aynı denetimler
+        if ($this->activeSubscriptionRow((int) $user->id)) {
+            $this->app->enqueueMessage($this->text('already_active'), 'info');
+            $this->app->redirect($this->accountUrl());
+
+            return null;
+        }
+
+        $reason = $this->guardReason($user, 'subscribe');
+
+        if ($reason !== '') {
+            return $this->guardRedirect($reason, $user, 'subscribe', 'start');
         }
 
         $plan    = $this->planFromInput();
@@ -142,6 +169,13 @@ class PlgSystemNumistrbilling extends CMSPlugin
         ];
 
         $errors = $this->validateBilling($fields);
+
+        // 1.5.0 — Turnstile (anahtarlar girildiyse): bot değil mi?
+        if (!$errors && $this->turnstileEnabled() && !$this->turnstileVerify()) {
+            $errors['bot'] = $this->text('err_bot');
+            $this->recordAttempt((int) $user->id, 'subscribe', 'blocked', '', 'turnstile');
+            $this->log('guard-block', 'user=' . $user->id . ' ip=' . $this->clientIp() . ' reason=turnstile step=start');
+        }
 
         if ($errors) {
             echo $this->renderBillingFormPage($user, $plan, $errors, $fields, $cur);
@@ -200,9 +234,12 @@ class PlgSystemNumistrbilling extends CMSPlugin
         // DİKKAT: CF init yanıtı 'data' sarmalayıcısız, kök seviyede (ADR-004)
         if (($res['status'] ?? '') !== 'success' || empty($res['checkoutFormContent'])) {
             $this->log('cf-init-failed', 'user=' . $user->id . ' code=' . ($res['errorCode'] ?? '?') . ' msg=' . ($res['errorMessage'] ?? '?'));
+            $this->recordAttempt((int) $user->id, 'subscribe', 'init_failed', $conversationId, (string) ($res['errorCode'] ?? ''));
 
             return $this->failRedirect('PLG_SYSTEM_NUMISTRBILLING_ERR_INIT');
         }
+
+        $this->recordAttempt((int) $user->id, 'subscribe', 'init', $conversationId, '');
 
         // Bekleyen ödemeyi oturumda tut (callback doğrulaması + onay kanıtı)
         $s = $this->app->getSession();
@@ -343,6 +380,18 @@ class PlgSystemNumistrbilling extends CMSPlugin
         // düşebilir. iyzico teslimatı sağlıklı saysın diye 400 DEĞİL, 200 dönüyoruz;
         // olayı yalnızca kaydedip geçiyoruz (Pro durumu abonelik olaylarından yönetilir).
         if ($subRef === '' || strpos($eventType, 'subscription.') !== 0) {
+            // 1.5.0 — ödeme formu sonucu (kart deneme izleme): yalnız VAR OLAN 'init'
+            // denemesini günceller, yeni satır açmaz; imzasız sahte bildirim en fazla
+            // bir hesabın kendi denemesini 'başarısız' gösterebilir.
+            $authNote = '';
+
+            if ($eventType === 'checkout_form_auth') {
+                $conv   = substr((string) ($payload['paymentConversationId'] ?? ''), 0, 96);
+                $result = $this->guard()::authResult((string) ($payload['status'] ?? ''));
+                $hit    = ($conv !== '' && $result !== '') ? $this->markAttemptResult($conv, $result) : 0;
+                $authNote = ' conv=' . $conv . ' status=' . substr((string) ($payload['status'] ?? ''), 0, 16) . ' matched=' . $hit;
+            }
+
             // 1.2.1 — teşhis: abonelik dışı bildirimler de aynı gizli anahtarla
             // imzalanıyorsa, yenileme webhook'u gelmeden ÖNCE hangi HMAC varyantının
             // tuttuğunu öğreniriz (eşleşirse 'wh-sig-ok variant=…' satırı düşer).
@@ -352,6 +401,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
                 . ' sig=' . $this->verifyWebhookSignature($eventType, $subRef, $orderRef, $custRef)
                 . ' sigLen=' . strlen($this->signatureHeader())
                 . ' keys=' . implode('|', array_slice(array_keys($payload), 0, 15))
+                . $authNote
             );
 
             return $this->ok(['ok' => true, 'action' => 'ignored_non_subscription']);
@@ -617,6 +667,15 @@ class PlgSystemNumistrbilling extends CMSPlugin
             return $this->failRedirect('PLG_SYSTEM_NUMISTRBILLING_ERR_NOSUB');
         }
 
+        // 1.5.0 — kart güncelleme formu da kart denemeye açık: aynı sayım sınırları
+        $reason = $this->guardReason($user, 'cardupdate');
+
+        if ($reason !== '') {
+            return $this->guardRedirect($reason, $user, 'cardupdate', 'cardupdate');
+        }
+
+        $this->recordAttempt((int) $user->id, 'cardupdate', 'init', '', '');
+
         $res = $this->client()->initializeCardUpdateForm([
             'locale'                    => 'tr',
             'callbackUrl'               => $this->accountUrl(),
@@ -753,11 +812,14 @@ class PlgSystemNumistrbilling extends CMSPlugin
             $this->updateSubscription((string) $row->subscription_reference_code, ['status' => 'EXPIRED']);
         }
 
+        $attempts = $this->attemptStatsAndPurge();
+
         $this->log(
             'housekeeping',
             'checked=' . count($rows) . ' revoked=[' . implode(',', $revoked) . ']'
             . ' expireActive=' . ($expireActive ? '1' : '0') . ' staleActive=' . $staleActive
             . ' reconcile=' . json_encode($recon)
+            . ' attempts24h=' . json_encode($attempts)
         );
 
         return $this->ok([
@@ -767,6 +829,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'expire_active' => $expireActive,
             'stale_active'  => $staleActive,
             'reconcile'     => $recon,
+            'attempts_24h'  => $attempts,
         ]);
     }
 
@@ -958,6 +1021,225 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $this->log('reconcile-search', 'indexed=' . \count($index));
 
         return $index;
+    }
+
+    // ==================================================================
+    // 1.5.0 — Kötüye kullanım (kart deneme) koruması
+    // ==================================================================
+
+    /** @return string Karar sınıfının adı (src/CheckoutGuard.php yüklenir) */
+    private function guard(): string
+    {
+        require_once __DIR__ . '/src/CheckoutGuard.php';
+
+        return 'NumistrCheckoutGuard';
+    }
+
+    /**
+     * @param string $kind 'subscribe' | 'cardupdate'
+     *
+     * @return string '' = izin; neden: paused | email_domain | guard_unavailable |
+     *                breaker | failures | user_limit | ip_limit
+     */
+    private function guardReason($user, string $kind): string
+    {
+        $G = $this->guard();
+
+        if ($kind === 'subscribe') {
+            if ((int) $this->params->get('checkout_enabled', 1) !== 1) {
+                return 'paused';
+            }
+
+            if ($G::emailDomainBlocked((string) $user->email, (string) $this->params->get('blocked_email_domains', ''))) {
+                return 'email_domain';
+            }
+        }
+
+        $counts = $this->attemptCounts((int) $user->id, $this->clientIp());
+
+        if ($counts === null) {
+            return 'guard_unavailable'; // sayım yapılamıyorsa ödeme açılmaz (fail-closed)
+        }
+
+        $limits = [];
+
+        foreach (array_keys($G::DEFAULTS) as $k) {
+            $limits[$k] = $this->params->get($k, 0);
+        }
+
+        return $G::decide($counts, $limits);
+    }
+
+    private function guardRedirect(string $reason, $user, string $kind, string $step)
+    {
+        $this->log(
+            'guard-block',
+            'user=' . (int) $user->id . ' ip=' . $this->clientIp() . ' kind=' . $kind . ' step=' . $step . ' reason=' . $reason
+        );
+
+        if ($reason !== 'paused' && $reason !== 'guard_unavailable') {
+            $this->recordAttempt((int) $user->id, $kind, 'blocked', '', $reason);
+        }
+
+        return $this->failRedirect(
+            $reason === 'paused' ? 'PLG_SYSTEM_NUMISTRBILLING_ERR_PAUSED' : 'PLG_SYSTEM_NUMISTRBILLING_ERR_LIMIT'
+        );
+    }
+
+    /** @return array<string,int>|null null = tablo yok / DB hatası */
+    private function attemptCounts(int $userId, string $ip): ?array
+    {
+        try {
+            $db      = Factory::getDbo();
+            $hour    = $db->quote(Factory::getDate('-1 hour')->toSql());
+            $day     = $db->quote(Factory::getDate('-1 day')->toSql());
+            $created = $db->quoteName('created');
+            $uid     = $db->quoteName('user_id') . ' = ' . (int) $userId;
+            $ipq     = $db->quoteName('ip') . ' = ' . $db->quote($ip);
+            $opened  = $db->quoteName('status') . ' IN (' . $db->quote('init') . ', '
+                . $db->quote('auth_success') . ', ' . $db->quote('auth_failure') . ')';
+            $failed  = $db->quoteName('status') . ' = ' . $db->quote('auth_failure');
+            $sum     = static function (string $cond, string $alias): string {
+                return 'COALESCE(SUM(' . $cond . '), 0) AS ' . $alias;
+            };
+
+            $db->setQuery(
+                'SELECT '
+                . $sum($uid . ' AND ' . $opened, 'user_day') . ', '
+                . $sum($ipq . ' AND ' . $opened . ' AND ' . $created . ' >= ' . $hour, 'ip_hour') . ', '
+                . $sum($ipq . ' AND ' . $opened, 'ip_day') . ', '
+                . $sum($opened . ' AND ' . $created . ' >= ' . $hour, 'global_hour') . ', '
+                . $sum($opened, 'global_day') . ', '
+                . $sum($uid . ' AND ' . $failed, 'fail_user_day') . ', '
+                . $sum($ipq . ' AND ' . $failed, 'fail_ip_day')
+                . ' FROM ' . $db->quoteName(self::ATTEMPTS_TABLE)
+                . ' WHERE ' . $created . ' >= ' . $day
+            );
+
+            $row = (array) ($db->loadAssoc() ?: []);
+
+            return array_map('intval', $row);
+        } catch (\Throwable $e) {
+            $this->log('db-error', 'attemptCounts: ' . $e->getMessage());
+
+            return null;
+        }
+    }
+
+    /** @param string $status init | init_failed | blocked | auth_success | auth_failure */
+    private function recordAttempt(int $userId, string $kind, string $status, string $conversationId, string $reason): void
+    {
+        try {
+            $db  = Factory::getDbo();
+            $now = $db->quote(Factory::getDate()->toSql());
+
+            $db->setQuery(
+                'INSERT INTO ' . $db->quoteName(self::ATTEMPTS_TABLE)
+                . ' (' . implode(', ', array_map([$db, 'quoteName'], [
+                    'user_id', 'kind', 'ip', 'status', 'reason', 'conversation_id', 'created', 'modified',
+                ])) . ') VALUES ('
+                . (int) $userId . ', '
+                . $db->quote(substr($kind, 0, 16)) . ', '
+                . $db->quote($this->clientIp()) . ', '
+                . $db->quote(substr($status, 0, 16)) . ', '
+                . $db->quote(substr($reason, 0, 32)) . ', '
+                . ($conversationId !== '' ? $db->quote(substr($conversationId, 0, 96)) : 'NULL') . ', '
+                . $now . ', ' . $now . ')'
+            );
+            $db->execute();
+        } catch (\Throwable $e) {
+            $this->log('db-error', 'recordAttempt: ' . $e->getMessage());
+        }
+    }
+
+    /** checkout_form_auth sonucu → 'init' denemesini güncelle. @return int güncellenen satır */
+    private function markAttemptResult(string $conversationId, string $result): int
+    {
+        try {
+            $db = Factory::getDbo();
+
+            $db->setQuery(
+                'UPDATE ' . $db->quoteName(self::ATTEMPTS_TABLE)
+                . ' SET ' . $db->quoteName('status') . ' = ' . $db->quote($result)
+                . ', ' . $db->quoteName('modified') . ' = ' . $db->quote(Factory::getDate()->toSql())
+                . ' WHERE ' . $db->quoteName('conversation_id') . ' = ' . $db->quote($conversationId)
+                . ' AND ' . $db->quoteName('status') . ' = ' . $db->quote('init')
+            );
+            $db->execute();
+
+            return (int) $db->getAffectedRows();
+        } catch (\Throwable $e) {
+            $this->log('db-error', 'markAttemptResult: ' . $e->getMessage());
+
+            return 0;
+        }
+    }
+
+    /** Housekeeping: 90 günden eski denemeleri sil, son 24 saatin durum sayımını döndür. */
+    private function attemptStatsAndPurge(): array
+    {
+        try {
+            $db = Factory::getDbo();
+
+            $db->setQuery(
+                'DELETE FROM ' . $db->quoteName(self::ATTEMPTS_TABLE)
+                . ' WHERE ' . $db->quoteName('created') . ' < ' . $db->quote(Factory::getDate('-90 days')->toSql())
+            );
+            $db->execute();
+
+            $db->setQuery(
+                'SELECT ' . $db->quoteName('status') . ', COUNT(*) AS n FROM ' . $db->quoteName(self::ATTEMPTS_TABLE)
+                . ' WHERE ' . $db->quoteName('created') . ' >= ' . $db->quote(Factory::getDate('-1 day')->toSql())
+                . ' GROUP BY ' . $db->quoteName('status')
+            );
+
+            $out = [];
+
+            foreach ((array) $db->loadObjectList() as $r) {
+                $out[(string) $r->status] = (int) $r->n;
+            }
+
+            return $out;
+        } catch (\Throwable $e) {
+            return ['error' => 'attempts table unavailable'];
+        }
+    }
+
+    private function turnstileEnabled(): bool
+    {
+        return trim((string) $this->params->get('turnstile_site_key', '')) !== ''
+            && trim((string) $this->params->get('turnstile_secret_key', '')) !== '';
+    }
+
+    /** Cloudflare Turnstile sunucu doğrulaması; ağ hatasında da false (fail-closed). */
+    private function turnstileVerify(): bool
+    {
+        $token = trim((string) $this->app->input->post->getString('cf-turnstile-response', ''));
+
+        if ($token === '' || strlen($token) > 2048) {
+            return false;
+        }
+
+        try {
+            $res = \Joomla\CMS\Http\HttpFactory::getHttp()->post(
+                'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+                http_build_query([
+                    'secret'   => trim((string) $this->params->get('turnstile_secret_key', '')),
+                    'response' => $token,
+                    'remoteip' => $this->clientIp(),
+                ]),
+                ['Content-Type' => 'application/x-www-form-urlencoded'],
+                8
+            );
+
+            $j = json_decode((string) $res->getBody(), true);
+
+            return is_array($j) && !empty($j['success']);
+        } catch (\Throwable $e) {
+            $this->log('turnstile-error', $e->getMessage());
+
+            return false;
+        }
     }
 
     // ==================================================================
@@ -1456,6 +1738,16 @@ class PlgSystemNumistrbilling extends CMSPlugin
         $contractUrl = htmlspecialchars((string) $this->params->get('contract_url', '/tr/mesafeli-satis-sozlesmesi'), ENT_QUOTES, 'UTF-8');
         $preinfoUrl  = htmlspecialchars((string) $this->params->get('preinfo_url', '/tr/on-bilgilendirme-formu'), ENT_QUOTES, 'UTF-8');
 
+        // 1.5.0 — Turnstile yalnız anahtarlar girildiyse
+        $turnstile = '';
+
+        if ($this->turnstileEnabled()) {
+            $turnstile = '<div class="cf-turnstile" data-sitekey="'
+                . htmlspecialchars(trim((string) $this->params->get('turnstile_site_key', '')), ENT_QUOTES, 'UTF-8')
+                . '" data-language="' . $this->lang() . '"></div>'
+                . '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>';
+        }
+
         return '<!DOCTYPE html><html lang="' . $this->lang() . '"><head><meta charset="utf-8">'
             . '<meta name="viewport" content="width=device-width,initial-scale=1">'
             . '<meta name="robots" content="noindex,nofollow">'
@@ -1482,6 +1774,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             . '</div>'
             . '<label class="consent"><input type="checkbox" name="bill_consent" value="1"> '
             . sprintf($t['consent'], $preinfoUrl, $contractUrl) . $err('consent') . '</label>'
+            . $turnstile . $err('bot')
             . '<button type="submit">' . $t['pay_button'] . '</button>'
             . '</form>'
             . '<p class="fine">' . $t['secure_note'] . '</p>'
@@ -1559,6 +1852,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
                 'err_address'      => 'Enter your billing address.',
                 'err_city'         => 'Enter your city.',
                 'err_consent'      => 'You must accept the agreements to continue.',
+                'err_bot'          => 'The security check could not be completed. Please reload the page and try again.',
             ];
         }
 
@@ -1590,6 +1884,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
             'err_address'      => 'Fatura adresinizi girin.',
             'err_city'         => 'İlinizi girin.',
             'err_consent'      => 'Devam etmek için sözleşmeleri kabul etmelisiniz.',
+            'err_bot'          => 'Güvenlik doğrulaması tamamlanamadı. Lütfen sayfayı yenileyip tekrar deneyin.',
         ];
     }
 
