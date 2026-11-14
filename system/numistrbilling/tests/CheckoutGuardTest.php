@@ -40,11 +40,17 @@ check('uid 941: 3 formdan sonra hesap sınırı', $G::decide(['user_day' => 3], 
 check('uid 941: 39 form -> engel', $G::decide(['user_day' => 39], $none) !== '');
 check('aynı IP yeni hesap: saatte 3 -> ip_limit', $G::decide(['user_day' => 0, 'ip_hour' => 3, 'ip_day' => 3], $none) === 'ip_limit');
 check('aynı IP gün içinde 5 -> ip_limit', $G::decide(['ip_hour' => 1, 'ip_day' => 5], $none) === 'ip_limit');
-check('IP değiştiren saldırgan: site saatte 10 -> breaker', $G::decide(['global_hour' => 10], $none) === 'breaker');
-check('site günde 30 -> breaker', $G::decide(['global_hour' => 0, 'global_day' => 30], $none) === 'breaker');
+// 1.5.1 — devre kesici IP bazlı: site geneli sayım kimseyi engellemez, yalnız uyarı
+check('site saatte 10 -> gerçek müşteri ENGELLENMEZ', $G::decide(['global_hour' => 10, 'global_day' => 10], $none) === '');
+check('site günde 500 -> gerçek müşteri ENGELLENMEZ', $G::decide(['global_hour' => 0, 'global_day' => 500], $none) === '');
+check('site saatte 10 -> uyarı (globalSpike)', $G::globalSpike(['global_hour' => 10], $none) === true);
+check('site günde 30 -> uyarı', $G::globalSpike(['global_day' => 30], $none) === true);
+check('site saatte 9 / günde 29 -> uyarı yok', $G::globalSpike(['global_hour' => 9, 'global_day' => 29], $none) === false);
+check('IP değiştiren saldırgan: her yeni IP 3. formda durur', $G::decide(['global_hour' => 40, 'ip_hour' => 3, 'ip_day' => 3], $none) === 'ip_limit');
+check('IP değiştiren saldırgan: her yeni IP 2 başarısız kartta durur', $G::decide(['global_day' => 40, 'fail_ip_day' => 2], $none) === 'failures');
 check('hesapta 2 başarısız kart -> failures', $G::decide(['fail_user_day' => 2], $none) === 'failures');
 check('IP\'de 2 başarısız kart (yeni hesap) -> failures', $G::decide(['fail_ip_day' => 2], $none) === 'failures');
-check('devre kesici öncelikli', $G::decide(['global_hour' => 50, 'user_day' => 50], $none) === 'breaker');
+check('site sayımı yüksek + hesap sınırı -> user_limit', $G::decide(['global_hour' => 50, 'user_day' => 50], $none) === 'user_limit');
 
 // ---------------------------------------------------------------- ayarlar ---
 check('ayar 0 -> varsayılan (sınırsız değil)', $G::limits(['limit_user_day' => 0])['limit_user_day'] === 3);

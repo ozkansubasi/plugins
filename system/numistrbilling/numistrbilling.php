@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Billing (iyzico web subscription)
  * @subpackage  plg_system_numistrbilling
- * @version     1.5.0
+ * @version     1.5.1
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -26,6 +26,8 @@
  *   hesap / IP / site geneli form açma sınırları, başarısız kart sınırı (numistr_billing_attempts),
  *   start'ta aktif abonelik denetimi, isteğe bağlı Cloudflare Turnstile; checkout_form_auth
  *   bildiriminin sonucu denemeye işlenir. Karar: src/CheckoutGuard.php (testli).
+ * 1.5.1: devre kesici IP + hesap bazlı (kullanıcı kararı) — site geneli sayım kimseyi engellemez,
+ *   yalnız 'guard-global-spike' uyarısı yazar; saldırgan sayacı doldurup gerçek müşteriyi durduramaz.
  */
 
 defined('_JEXEC') or die;
@@ -1039,7 +1041,7 @@ class PlgSystemNumistrbilling extends CMSPlugin
      * @param string $kind 'subscribe' | 'cardupdate'
      *
      * @return string '' = izin; neden: paused | email_domain | guard_unavailable |
-     *                breaker | failures | user_limit | ip_limit
+     *                failures | user_limit | ip_limit (site geneli eşik engellemez, 1.5.1)
      */
     private function guardReason($user, string $kind): string
     {
@@ -1065,6 +1067,15 @@ class PlgSystemNumistrbilling extends CMSPlugin
 
         foreach (array_keys($G::DEFAULTS) as $k) {
             $limits[$k] = $this->params->get($k, 0);
+        }
+
+        // 1.5.1 — site geneli eşik engellemez, yalnız uyarı (devre kesici IP/hesap bazlı)
+        if ($G::globalSpike($counts, $limits)) {
+            $this->log(
+                'guard-global-spike',
+                'hour=' . (int) ($counts['global_hour'] ?? 0) . ' day=' . (int) ($counts['global_day'] ?? 0)
+                . ' user=' . (int) $user->id . ' ip=' . $this->clientIp()
+            );
         }
 
         return $G::decide($counts, $limits);

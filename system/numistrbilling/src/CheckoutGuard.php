@@ -21,8 +21,8 @@ final class NumistrCheckoutGuard
         'limit_user_day'    => 3,  // hesap başına 24 saatte açılan ödeme formu
         'limit_ip_hour'     => 3,  // IP başına 1 saatte
         'limit_ip_day'      => 5,  // IP başına 24 saatte
-        'limit_global_hour' => 10, // tüm site 1 saatte (devre kesici)
-        'limit_global_day'  => 30, // tüm site 24 saatte (devre kesici)
+        'limit_global_hour' => 10, // tüm site 1 saatte — yalnız UYARI eşiği, engellemez (1.5.1)
+        'limit_global_day'  => 30, // tüm site 24 saatte — yalnız UYARI eşiği, engellemez (1.5.1)
         'limit_fail_day'    => 2,  // hesap ya da IP başına 24 saatte başarısız kart denemesi
     ];
 
@@ -40,7 +40,11 @@ final class NumistrCheckoutGuard
      *                                  fail_user_day, fail_ip_day
      * @param array<string,mixed> $limits DEFAULTS anahtarları (eklenti ayarlarından)
      *
-     * @return string '' = izin; aksi hâlde neden kodu (breaker|failures|user_limit|ip_limit)
+     * Devre kesici IP (ve hesap) bazlıdır (1.5.1, kullanıcı kararı): site geneli sayım kimseyi
+     * engellemez — saldırgan IP değiştirerek sayacı doldursa gerçek müşteriler etkilenmesin.
+     * Site geneli eşik yalnız uyarı içindir: globalSpike().
+     *
+     * @return string '' = izin; aksi hâlde neden kodu (failures|user_limit|ip_limit)
      */
     public static function decide(array $counts, array $limits): string
     {
@@ -48,10 +52,6 @@ final class NumistrCheckoutGuard
         $c = static function (string $k) use ($counts): int {
             return max(0, (int) ($counts[$k] ?? 0));
         };
-
-        if ($c('global_hour') >= $l['limit_global_hour'] || $c('global_day') >= $l['limit_global_day']) {
-            return 'breaker';
-        }
 
         if ($c('fail_user_day') >= $l['limit_fail_day'] || $c('fail_ip_day') >= $l['limit_fail_day']) {
             return 'failures';
@@ -66,6 +66,15 @@ final class NumistrCheckoutGuard
         }
 
         return '';
+    }
+
+    /** Site geneli eşik aşıldı mı? (engellemez; kayda uyarı düşmek için) */
+    public static function globalSpike(array $counts, array $limits): bool
+    {
+        $l = self::limits($limits);
+
+        return max(0, (int) ($counts['global_hour'] ?? 0)) >= $l['limit_global_hour']
+            || max(0, (int) ($counts['global_day'] ?? 0)) >= $l['limit_global_day'];
     }
 
     /** @return array<string,int> */

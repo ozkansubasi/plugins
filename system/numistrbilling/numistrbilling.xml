@@ -7,7 +7,7 @@
     <license>GNU General Public License version 2 or later</license>
     <authorEmail>info@numistr.org</authorEmail>
     <authorUrl>https://www.numistr.org</authorUrl>
-    <version>1.5.0</version>
+    <version>1.5.1</version>
     <description>PLG_SYSTEM_NUMISTRBILLING_XML_DESCRIPTION</description>
 
     <files>
@@ -69,8 +69,8 @@
                 <field name="limit_user_day" type="number" label="Hesap başına 24 saatte ödeme formu" description="1'den küçükse varsayılan 3" default="3" min="1" />
                 <field name="limit_ip_hour" type="number" label="IP başına 1 saatte ödeme formu" description="1'den küçükse varsayılan 3" default="3" min="1" />
                 <field name="limit_ip_day" type="number" label="IP başına 24 saatte ödeme formu" description="1'den küçükse varsayılan 5" default="5" min="1" />
-                <field name="limit_global_hour" type="number" label="Site geneli 1 saatte ödeme formu (devre kesici)" description="Aşılınca o saat herkes için ödeme formu açılmaz. 1'den küçükse varsayılan 10" default="10" min="1" />
-                <field name="limit_global_day" type="number" label="Site geneli 24 saatte ödeme formu (devre kesici)" description="1'den küçükse varsayılan 30" default="30" min="1" />
+                <field name="limit_global_hour" type="number" label="Site geneli 1 saatte ödeme formu — uyarı eşiği" description="ENGELLEMEZ (devre kesici IP ve hesap bazlı, 1.5.1). Aşılınca kayda 'guard-global-spike' uyarısı düşer. 1'den küçükse varsayılan 10" default="10" min="1" />
+                <field name="limit_global_day" type="number" label="Site geneli 24 saatte ödeme formu — uyarı eşiği" description="ENGELLEMEZ, yalnız uyarı. 1'den küçükse varsayılan 30" default="30" min="1" />
                 <field name="limit_fail_day" type="number" label="Hesap ya da IP başına 24 saatte başarısız kart" description="iyzico checkout_form_auth bildirimine göre. 1'den küçükse varsayılan 2" default="2" min="1" />
                 <field name="blocked_email_domains" type="textarea" label="Ek engelli e-posta alan adları" description="Satır ya da virgülle ayırın. Bilinen tek kullanımlık adresler (fldubai.com, grabmail.io, mailinator.com …) zaten engelli." rows="4" filter="raw" />
                 <field name="turnstile_site_key" type="text" label="Cloudflare Turnstile site key" description="İkisi de doluysa fatura formunda bot doğrulaması açılır" />
