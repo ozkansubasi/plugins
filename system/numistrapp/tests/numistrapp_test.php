@@ -8,6 +8,10 @@ namespace Joomla\CMS\Plugin {
         public $params;
         protected $app;
     }
+
+    class PluginHelper
+    {
+    }
 }
 
 namespace Joomla\CMS\Uri {
@@ -80,6 +84,24 @@ namespace {
     check('geçersiz GTM kimliği → GTM yok', strpos($yokGtm, 'googletagmanager') === false);
     check('EN metin', strpos($yokGtm, 'Taking you to the app store') !== false && strpos($yokGtm, '<html lang="en">') !== false);
     check('enjeksiyon yok', strpos($yokGtm, '"><script>') === false);
+
+    // 1.1.0 — çerez onayı (çerez eklentisi açık)
+    $onay = PlgSystemNumistrapp::onayAyari(__DIR__ . '/../../numistrconsent/media/metinler.json');
+    check('onay ayarı: çerez adı + metin sürümü', $onay['c'] === 'numistr_cerez_tercihi' && $onay['v'] !== '' && $onay['v'] !== 'yedek');
+    check('onay ayarı: dosya yoksa yedek', PlgSystemNumistrapp::onayAyari(__DIR__ . '/yok.json')['v'] === 'yedek');
+    $oh = PlgSystemNumistrapp::sayfa('tr', 'GTM-TRH8ZR6M', $u, $onay);
+    check('onay kipi: düz GTM parçası yok', strpos($oh, "'script','dataLayer'") === false);
+    check('onay kipi: GTM yalnız geçerli tercihte (a||p)', strpos($oh, 'w.__nczOnay=!!(t&&(t.a||t.p)&&A.g);if(!w.__nczOnay){return;}') !== false);
+    check('onay kipi: sürüm denetimi', strpos($oh, 'if(!t||t.v!==A.v){t=null;}') !== false);
+    check('onay kipi: consent default denied, GTM\'den önce', strpos($oh, 'g("consent","default",{ad_storage:"denied"') !== false
+        && strpos($oh, 'g("consent","default"') < strpos($oh, 'gtm.js?id='));
+    check('onay kipi: ad_personalization her zaman denied', strpos($oh, 'ad_user_data:t.p?"granted":"denied",ad_personalization:"denied"') !== false);
+    check('onay kipi: onaysız ziyarette beklemeden yönlendirme', strpos($oh, 'if(!window.__nczOnay){git();return;}window.dataLayer') !== false);
+    check('onay kipi: onaylı ziyarette eventCallback akışı sürer', strpos($oh, 'eventCallback:git,eventTimeout:800') !== false && strpos($oh, 'setTimeout(git,1000)') !== false);
+    check('onay kipi: pencere yok', strpos($oh, 'ncz') === false || strpos($oh, 'ncz-veri') === false);
+    $ohx = PlgSystemNumistrapp::sayfa('tr', 'GTM-x"><script>', $u, $onay);
+    check('onay kipi: geçersiz GTM → g boş, enjeksiyon yok', strpos($ohx, '"g":""') !== false && strpos($ohx, '"><script>') === false);
+    check('çerez eklentisi kapalı: 1.0.0 davranışı (eski GTM parçası)', strpos($html, "'script','dataLayer'") !== false && strpos($html, '__nczOnay') === false);
 
     echo "\n$gecti passed, $kaldi failed\n";
     exit($kaldi > 0 ? 1 : 0);

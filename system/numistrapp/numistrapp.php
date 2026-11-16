@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR App Link
  * @subpackage  plg_system_numistrapp
- * @version     1.0.0
+ * @version     1.1.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -18,11 +18,17 @@
  * Sayfa noindex (meta + X-Robots-Tag). GTM / GA4 / Ads ayarları Prime'da.
  *
  * Joomla yönlendiricisine hiç girmez: onAfterInitialise'da yol eşleşirse sayfayı basıp uygulamayı kapatır.
+ *
+ * 1.1.0 (Prime NT-261117-013541j9 + EK -014937av, çerez onayı): "Sistem - NumisTR Çerez Onayı" eklentisi açıksa
+ * sayfa pencere göstermez, tercih çerezini (numistr_cerez_tercihi) tarayıcıda okur. Geçerli tercihte analitik ya da
+ * pazarlama onaylıysa consent default + update ile GTM yüklenir ve eventCallback akışı sürer; tercih yoksa, eskiyse
+ * ya da reddedilmişse GTM hiç yüklenmez ve yönlendirme beklemeden yapılır. Çerez eklentisi kapalıysa 1.0.0 davranışı.
  */
 
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Plugin\CMSPlugin;
+use Joomla\CMS\Plugin\PluginHelper;
 use Joomla\CMS\Uri\Uri;
 
 class PlgSystemNumistrapp extends CMSPlugin
@@ -33,6 +39,7 @@ class PlgSystemNumistrapp extends CMSPlugin
     protected $autoloadLanguage = true;
 
     public const GTM_VARSAYILAN = 'GTM-TRH8ZR6M';
+    public const ONAY_CEREZI    = 'numistr_cerez_tercihi';
 
     public function onAfterInitialise()
     {
@@ -48,7 +55,10 @@ class PlgSystemNumistrapp extends CMSPlugin
         }
 
         $gtm  = (string) $this->params->get('gtm_id', self::GTM_VARSAYILAN);
-        $html = self::sayfa($dil, $gtm, self::magazaAdresleri($dil, $uri->getQuery(true)));
+        $onay = PluginHelper::isEnabled('system', 'numistrconsent')
+            ? self::onayAyari(JPATH_ROOT . '/media/plg_system_numistrconsent/metinler.json')
+            : null;
+        $html = self::sayfa($dil, $gtm, self::magazaAdresleri($dil, $uri->getQuery(true)), $onay);
 
         $this->app->setHeader('Content-Type', 'text/html; charset=utf-8', true);
         $this->app->setHeader('X-Robots-Tag', 'noindex, nofollow', true);
@@ -56,6 +66,19 @@ class PlgSystemNumistrapp extends CMSPlugin
         $this->app->sendHeaders();
         echo $html;
         $this->app->close();
+    }
+
+    /**
+     * Çerez eklentisinin metin sürümü (metinler.json `surum`; okunamazsa çerez eklentisiyle aynı 'yedek').
+     *
+     * @return array{c:string, v:string}
+     */
+    public static function onayAyari($metinYolu)
+    {
+        $veri  = is_file($metinYolu) ? json_decode((string) file_get_contents($metinYolu), true) : null;
+        $surum = is_array($veri) && !empty($veri['surum']) && is_string($veri['surum']) ? $veri['surum'] : 'yedek';
+
+        return ['c' => self::ONAY_CEREZI, 'v' => $surum];
     }
 
     /**
@@ -146,8 +169,9 @@ class PlgSystemNumistrapp extends CMSPlugin
 
     /**
      * @param array{apple:string, google:string} $adres
+     * @param array{c:string, v:string}|null    $onay  çerez eklentisi açıksa onay ayarı, kapalıysa null (1.0.0 davranışı)
      */
-    public static function sayfa($dil, $gtmId, array $adres)
+    public static function sayfa($dil, $gtmId, array $adres, $onay = null)
     {
         $t   = self::metinler($dil);
         $h   = static function ($s) {
@@ -156,8 +180,9 @@ class PlgSystemNumistrapp extends CMSPlugin
         $jsf = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES;
 
         $gtm = '';
+        $gtmGecerli = preg_match('~^GTM-[A-Z0-9]+$~', (string) $gtmId) === 1;
 
-        if (preg_match('~^GTM-[A-Z0-9]+$~', (string) $gtmId)) {
+        if ($gtmGecerli && $onay === null) {
             // Sitedeki GTM parçasıyla aynı (şablondaki <head> kodu).
             $gtm = "<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});"
                 . "var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;"
@@ -174,10 +199,28 @@ class PlgSystemNumistrapp extends CMSPlugin
             . 'if(!store)return;'
             . 'document.documentElement.className+=" yonlendir";'
             . 'var gitti=false;function git(){if(gitti)return;gitti=true;location.replace(U[store]);}'
+            . ($onay === null ? '' : 'if(!window.__nczOnay){git();return;}')
             . 'window.dataLayer=window.dataLayer||[];'
             . 'window.dataLayer.push({event:"app_store_redirect",store:store,lang:L,eventCallback:git,eventTimeout:800});'
             . 'setTimeout(git,1000);'
             . '})();';
+
+        if ($onay !== null) {
+            // Çerez onayı (BASIC): GTM yalnız geçerli tercihte analitik ya da pazarlama onaylıysa yüklenir.
+            $ayar = json_encode(['c' => (string) $onay['c'], 'v' => (string) $onay['v'], 'g' => $gtmGecerli ? (string) $gtmId : ''], $jsf);
+            $gtm  = '<script>(function(w,d){var A=' . $ayar . ',t=null;'
+                . 'try{var m=d.cookie.match(new RegExp("(?:^|;\\\\s*)"+A.c+"=([^;]*)"));'
+                . 'if(m){t=JSON.parse(decodeURIComponent(m[1]));if(!t||t.v!==A.v){t=null;}}}catch(e){t=null;}'
+                . 'w.__nczOnay=!!(t&&(t.a||t.p)&&A.g);if(!w.__nczOnay){return;}'
+                . 'w.dataLayer=w.dataLayer||[];w.gtag=w.gtag||function(){w.dataLayer.push(arguments);};var g=w.gtag;'
+                . 'g("consent","default",{ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied",analytics_storage:"denied",wait_for_update:500});'
+                . 'g("set","ads_data_redaction",true);g("set","url_passthrough",false);'
+                . 'g("consent","update",{analytics_storage:t.a?"granted":"denied",ad_storage:t.p?"granted":"denied",ad_user_data:t.p?"granted":"denied",ad_personalization:"denied"});'
+                . 'w.dataLayer.push({"gtm.start":new Date().getTime(),event:"gtm.js"});'
+                . 'var j=d.createElement("script");j.async=true;j.src="https://www.googletagmanager.com/gtm.js?id="+encodeURIComponent(A.g);'
+                . '(d.head||d.documentElement).appendChild(j);'
+                . '})(window,document);</script>';
+        }
 
         return '<!DOCTYPE html>' . "\n"
             . '<html lang="' . $h($dil) . '"><head><meta charset="utf-8">'

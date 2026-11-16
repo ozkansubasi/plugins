@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="system" method="upgrade">
+    <name>PLG_SYSTEM_NUMISTRCONSENT</name>
+    <author>NumisTR</author>
+    <creationDate>November 2026</creationDate>
+    <copyright>Copyright (C) 2026 NumisTR. All rights reserved.</copyright>
+    <license>GNU General Public License version 2 or later</license>
+    <authorEmail>info@numistr.org</authorEmail>
+    <authorUrl>https://www.numistr.org</authorUrl>
+    <version>1.0.0</version>
+    <description>PLG_SYSTEM_NUMISTRCONSENT_XML_DESCRIPTION</description>
+
+    <files>
+        <filename plugin="numistrconsent">numistrconsent.php</filename>
+        <filename>index.html</filename>
+        <folder>language</folder>
+    </files>
+
+    <media destination="plg_system_numistrconsent" folder="media">
+        <filename>cerez.js</filename>
+        <filename>cerez.css</filename>
+        <filename>metinler.json</filename>
+        <filename>index.html</filename>
+    </media>
+
+    <languages>
+        <language tag="en-GB">language/en-GB/plg_system_numistrconsent.ini</language>
+        <language tag="en-GB">language/en-GB/plg_system_numistrconsent.sys.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrconsent.ini</language>
+        <language tag="tr-TR">language/tr-TR/plg_system_numistrconsent.sys.ini</language>
+    </languages>
+
+    <config>
+        <fields name="params">
+            <fieldset name="basic">
+                <field name="gtm_id" type="text" label="PLG_SYSTEM_NUMISTRCONSENT_GTM" description="PLG_SYSTEM_NUMISTRCONSENT_GTM_DESC" default="GTM-TRH8ZR6M" filter="string" />
+                <field name="sablon_gtm_ayikla" type="radio" label="PLG_SYSTEM_NUMISTRCONSENT_SABLON" description="PLG_SYSTEM_NUMISTRCONSENT_SABLON_DESC" default="1" layout="joomla.form.field.radio.switcher" filter="integer">
+                    <option value="0">JNO</option>
+                    <option value="1">JYES</option>
+                </field>
+                <field name="sure_gun" type="number" label="PLG_SYSTEM_NUMISTRCONSENT_SURE" description="PLG_SYSTEM_NUMISTRCONSENT_SURE_DESC" default="182" min="1" max="395" filter="integer" />
+                <field name="politika_tr" type="text" label="PLG_SYSTEM_NUMISTRCONSENT_POLITIKA_TR" default="/tr/kvkk-ve-gizlilik-politikasi" filter="string" />
+                <field name="politika_en" type="text" label="PLG_SYSTEM_NUMISTRCONSENT_POLITIKA_EN" default="/en/privacy-policy-gdpr" filter="string" />
+            </fieldset>
+        </fields>
+    </config>
+</extension>

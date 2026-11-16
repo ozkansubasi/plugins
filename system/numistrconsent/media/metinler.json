@@ -1,0 +1,47 @@
+{
+  "_not": "İSKELET — Prime'ın metinler.json dosyası (Drive OTURUM/raporlar/cerez_onayi/) gelince bu dosyanın yerine konur. Şema ve anahtar adları değişmez. Bu metinle yayına alınmaz.",
+  "surum": "2026-11-iskelet",
+  "tr": {
+    "banner_baslik": "Çerez tercihleriniz",
+    "banner_metin": "Sitenin çalışması için zorunlu çerezler kullanıyoruz. Ziyaretleri ölçmek (analitik) ve reklamlarımızın etkisini görmek (pazarlama) için çerezleri yalnız onay verirseniz kullanırız. Seçiminizi istediğiniz zaman alt bilgideki “Çerez ayarları” bağlantısından değiştirebilirsiniz.",
+    "btn_kabul": "Tümünü kabul et",
+    "btn_ret": "Tümünü reddet",
+    "btn_ayarlar": "Ayarlar",
+    "ayar_baslik": "Çerez ayarları",
+    "ayar_giris": "Her kategori için izin verip vermediğinizi seçin. Zorunlu çerezler sitenin çalışması için gereklidir ve kapatılamaz.",
+    "kat_zorunlu_ad": "Zorunlu",
+    "kat_zorunlu_aciklama": "Oturum ve çerez tercihinizin hatırlanması gibi sitenin çalışması için gereken çerezler.",
+    "kat_analitik_ad": "Analitik",
+    "kat_analitik_aciklama": "Google Analytics ile ziyaretlerin sayılması ve sitenin nasıl kullanıldığının ölçülmesi.",
+    "kat_pazarlama_ad": "Pazarlama",
+    "kat_pazarlama_aciklama": "Google Ads ile reklamlarımızın sonuçlarının ölçülmesi. Kişiselleştirilmiş reklam ve yeniden hedefleme kullanılmaz.",
+    "btn_kaydet": "Seçimi kaydet",
+    "altbilgi_baglanti": "Çerez ayarları",
+    "politika_baglanti_metin": "Gizlilik Politikası"
+  },
+  "en": {
+    "banner_baslik": "Your cookie choices",
+    "banner_metin": "We use strictly necessary cookies to run this site. We use cookies to measure visits (analytics) and to see how our ads perform (marketing) only if you consent. You can change your choice at any time with the “Cookie settings” link in the footer.",
+    "btn_kabul": "Accept all",
+    "btn_ret": "Reject all",
+    "btn_ayarlar": "Settings",
+    "ayar_baslik": "Cookie settings",
+    "ayar_giris": "Choose whether you allow each category. Strictly necessary cookies are needed for the site to work and cannot be switched off.",
+    "kat_zorunlu_ad": "Strictly necessary",
+    "kat_zorunlu_aciklama": "Cookies the site needs to work, such as your session and remembering your cookie choice.",
+    "kat_analitik_ad": "Analytics",
+    "kat_analitik_aciklama": "Counting visits and measuring how the site is used, with Google Analytics.",
+    "kat_pazarlama_ad": "Marketing",
+    "kat_pazarlama_aciklama": "Measuring the results of our ads with Google Ads. No personalised advertising or retargeting.",
+    "btn_kaydet": "Save choices",
+    "altbilgi_baglanti": "Cookie settings",
+    "politika_baglanti_metin": "Privacy Policy"
+  },
+  "cerezler": [
+    { "ad": "numistr_cerez_tercihi", "saglayici": "NumisTR", "kategori": "zorunlu", "amac_tr": "Çerez tercihinizi hatırlar.", "amac_en": "Remembers your cookie choice.", "sure_tr": "6 ay", "sure_en": "6 months" },
+    { "ad": "Joomla oturum çerezi (rastgele ad)", "saglayici": "NumisTR", "kategori": "zorunlu", "amac_tr": "Oturumu sürdürür (giriş, formlar).", "amac_en": "Keeps your session (sign-in, forms).", "sure_tr": "Oturum", "sure_en": "Session" },
+    { "ad": "_ga", "saglayici": "Google Analytics", "kategori": "analitik", "amac_tr": "Ziyaretçileri ayırt etmek için.", "amac_en": "Distinguishes visitors.", "sure_tr": "2 yıl", "sure_en": "2 years" },
+    { "ad": "_ga_4H308X9TS1", "saglayici": "Google Analytics", "kategori": "analitik", "amac_tr": "Oturum durumunu saklar.", "amac_en": "Stores session state.", "sure_tr": "2 yıl", "sure_en": "2 years" },
+    { "ad": "_gcl_au", "saglayici": "Google Ads", "kategori": "pazarlama", "amac_tr": "Reklam tıklamalarından gelen ziyaretleri ölçer.", "amac_en": "Measures visits coming from ad clicks.", "sure_tr": "90 gün", "sure_en": "90 days" }
+  ]
+}
