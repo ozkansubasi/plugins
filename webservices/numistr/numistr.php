@@ -102,6 +102,11 @@ if (file_exists(__DIR__ . '/helpers/MotifSearchHelper.php')
     require_once __DIR__ . '/controllers/CatalogSearchController.php';
 }
 
+// ---- Site aramasi (/v1/search, 1.26.0) - optional ----
+if (file_exists(__DIR__ . '/helpers/SiteSearchHelper.php')) {
+    require_once __DIR__ . '/helpers/SiteSearchHelper.php';
+}
+
 // ---- AI Assistant (ADR-003, Phase 1) - optional, all-or-nothing ----
 // The controller is only loaded when every helper it depends on is present,
 // so a partial upload can never take the rest of /v1 down (2026-07-08 lesson).
@@ -546,6 +551,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== FACETS: /v1/variants/facets =================
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/variants/facets(?:[/?#;]|$)~', $uri)) {
             $this->handleVariantsFacets($uri);
+            return;
+        }
+
+        // ===================== SITE SEARCH: /v1/search (1.26.0) ============
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/search(?:[/?#;]|$)~', $uri)) {
+            $this->handleSiteSearch($uri);
             return;
         }
 
@@ -1428,6 +1439,93 @@ class PlgWebservicesNumistr extends CMSPlugin
 
         } catch (\Throwable $e) {
             $this->responseHelper->sendServerError($e);
+        }
+    }
+
+    /**
+     * GET /v1/search?q=&lang=tr|en&type=all|coins|settlements|articles&offset= (1.26.0)
+     *
+     * Site araması: sikke (darphane > hükümdar > başlık > ön/arka yüz betimi), antik yerleşim, blog yazısı.
+     * Toplam sayı dönmez (konumlandırma kuralı), yalnız has_more + next_offset. type=all: 8 sikke, 3 yerleşim,
+     * 3 yazı; tek tür: 12. Sonuç 10 dk önbellekte; hız sınırı 'search' kovası.
+     */
+    private function handleSiteSearch(string $uri): void
+    {
+        $this->dbg('site-search', $uri);
+        if (!class_exists('NumisTRSiteSearch')) {
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Site search not deployed');
+            return;
+        }
+        $this->checkRateLimit('search', $this->config['RATE_LIMITS']['search'] ?? 30);
+
+        try {
+            $app = Factory::getApplication();
+            $norm = NumisTRSiteSearch::normalize((string) $app->input->getString('q', ''));
+            $lang = $app->input->getCmd('lang', 'tr') === 'en' ? 'en' : 'tr';
+            $type = (string) $app->input->getCmd('type', 'all');
+            if (!in_array($type, ['all', 'coins', 'settlements', 'articles'], true)) {
+                $type = 'all';
+            }
+            $offset = $type === 'all' ? 0 : max(0, min((int) $app->input->getInt('offset', 0), NumisTRSiteSearch::MAX_OFFSET));
+            $none = ['items' => [], 'has_more' => false, 'next_offset' => null];
+
+            if ($norm === null) {
+                $this->responseHelper->sendJson(['data' => [
+                    'q' => '', 'lang' => $lang, 'type' => $type,
+                    'coins' => $none, 'settlements' => $none, 'articles' => $none,
+                ]]);
+                return;
+            }
+
+            $build = function () use ($norm, $lang, $type, $offset, $none) {
+                $db = Factory::getDbo();
+                $base = rtrim(Uri::root(), '/');
+                $search = new NumisTRSiteSearch($db, $this->config, $this->dbHelper, $base);
+                $limits = $type === 'all'
+                    ? ['coins' => 8, 'settlements' => 3, 'articles' => 3]
+                    : [$type => 12];
+                $out = ['q' => $norm['raw'], 'lang' => $lang, 'type' => $type,
+                    'coins' => $none, 'settlements' => $none, 'articles' => $none];
+
+                if (isset($limits['coins'])) {
+                    $r = $search->coins($lang, $norm, $offset, $limits['coins']);
+                    $rows = $this->attachListThumbs($db, $r['rows']);
+                    $items = [];
+                    foreach ($rows as $row) {
+                        $id = (int) $row['article_id'];
+                        $item = NumisTRSiteSearch::formatCoin(
+                            $row, $lang, $base,
+                            $this->dbHelper->normalizeMaterialKey((string) ($row['material'] ?? '')),
+                            $r['kinds'][$id] ?? 'title'
+                        );
+                        $item['thumb_url'] = $row['thumb_url'] ?? null;
+                        $items[] = $item;
+                    }
+                    $out['coins'] = ['items' => $items, 'has_more' => $r['has_more'],
+                        'next_offset' => $r['has_more'] ? $offset + $limits['coins'] : null];
+                }
+                foreach (['settlements', 'articles'] as $k) {
+                    if (isset($limits[$k])) {
+                        $r = $search->$k($lang, $norm, $offset, $limits[$k]);
+                        $out[$k] = $r + ['next_offset' => $r['has_more'] ? $offset + $limits[$k] : null];
+                    }
+                }
+
+                return ['data' => $out];
+            };
+
+            $cacheId = 'site_search_' . md5(json_encode([$norm['lower'], $lang, $type, $offset]));
+            if (!empty($this->config['CACHE']['enabled'])) {
+                $cache = Factory::getCache('numistr_api', 'callback');
+                $cache->setLifeTime((int) ($this->config['CACHE']['ttl_search'] ?? 600));
+                $payload = $cache->get($build, [], $cacheId);
+            } else {
+                $payload = $build();
+            }
+
+            $this->responseHelper->sendJson($payload);
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendServerError($e, 'Internal Server Error');
         }
     }
 

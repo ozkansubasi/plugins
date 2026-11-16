@@ -297,6 +297,7 @@ return [
         'ttl_materials' => 3600,   // Materials 1 saat cache
         'ttl_variants' => 60,      // Variants 1 dakika cache
         'ttl_facets' => 120,       // Facets 2 dakika cache
+        'ttl_search' => 600,       // Site araması 10 dakika cache (1.26.0)
     ],
 
     // AI Service Settings
