@@ -11,6 +11,7 @@ const ENGEL = ['*google-analytics.com/*collect*', '*analytics.google.com/*collec
   '*cloudflareinsights.com*'];
 const GOOGLE = /googletagmanager\.com|google-analytics\.com|analytics\.google\.com|doubleclick\.net|google\.com(\.tr)?\/(ads|measurement|pagead)/;
 
+const METIN = JSON.parse(fs.readFileSync(new URL('../../media/metinler.json', import.meta.url), 'utf8'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let ws, seq = 0;
 const bekleyen = new Map();
@@ -99,7 +100,8 @@ denetle('pencere 1. katmanda görünüyor', (await js(gorunur)) === 'k1');
 denetle('üç düğme (kabul / ret / ayarlar) aynı sınıf', await js(`[...document.querySelectorAll('.ncz-k1 .ncz-dugme')].map(b=>b.className+'|'+b.dataset.ncz).join(',')==='ncz-dugme|kabul,ncz-dugme|ret,ncz-dugme|ayarlar'`));
 denetle('odak sayfada kaldı (pencere odağı çalmadı)', await js(`!document.activeElement||!document.activeElement.closest('#ncz')`));
 denetle('consent default dataLayer\'da, update yok', await js(`(()=>{const d=dataLayer.map(a=>Array.from(a));return d.some(a=>a[0]==='consent'&&a[1]==='default'&&a[2].analytics_storage==='denied')&&!d.some(a=>a[0]==='consent'&&a[1]==='update')})()`));
-denetle('alt bilgide "Çerez ayarları" bağlantısı', await js(`[...document.querySelectorAll('footer a[href="#cerez-ayarlari"]')].map(a=>a.textContent).join()==='Çerez ayarları'`));
+denetle('alt bilgide "Çerez ayarları" bağlantısı', await js(`[...document.querySelectorAll('footer a[href="#cerez-ayarlari"]')].map(a=>a.textContent).join()===${JSON.stringify(METIN.tr.altbilgi_baglanti)}`));
+denetle('TR metin metinler.json\'dan', await js(`document.querySelector('#ncz-b1').textContent===${JSON.stringify(METIN.tr.banner_baslik)}&&document.querySelector('.ncz-k1 [data-ncz=ret]').textContent===${JSON.stringify(METIN.tr.btn_ret)}`));
 denetle('düğmelerde büyük harf dönüşümü yok', await js(`getComputedStyle(document.querySelector('.ncz-dugme')).textTransform==='none'`));
 await ekran('A_tr_masaustu_pencere');
 await ekran('A_tr_mobil_pencere', 390, 844, true);
@@ -170,18 +172,19 @@ await sleep(6000);
 denetle('gcs=G101 (yalnız analitik)', gcs().includes('G101') && !gcs().includes('G111'), 'gcs: ' + gcs().join(','));
 denetle('_ga var, _gcl_* yok', (await cerezler()).includes('_ga') && !(await cerezler()).some((c) => /^_gcl/.test(c)), (await cerezler()).join(','));
 
-console.log('G · metin sürümü değişince yeniden sorulur');
-await js(`document.cookie='numistr_cerez_tercihi='+encodeURIComponent(JSON.stringify({v:'eski',t:1,a:1,p:1}))+'; Path=/'`);
+console.log('G · metin sürümü değişince yeniden sorulur + eski izler temizlenir');
+await js(`document.cookie='numistr_cerez_tercihi='+encodeURIComponent(JSON.stringify({v:'eski',t:1,a:1,p:1}))+'; Path=/';document.cookie='_gid=x; Path=/';document.cookie='_gat_UA1=1; Path=/';document.cookie='_gcl_aw=x; Path=/';localStorage.setItem('_gcl_ls','x');sessionStorage.setItem('_gcl_gs','x')`);
 await git('/tr/');
 denetle('pencere yeniden çıktı', (await js(gorunur)) === 'k1');
 denetle('eski onayla GTM yüklenmedi', !istekler.some((i) => /gtm\.js/.test(i.url)));
-denetle('onaysız durumda kalan _ga* temizlendi', !(await cerezler()).some((c) => /^_ga|^_gcl/.test(c)), (await cerezler()).join(','));
+denetle('onaysız durumda kalan _ga*, _gid, _gat*, _gcl_* temizlendi', !(await cerezler()).some((c) => /^_ga|^_gid|^_gat|^_gcl/.test(c)), (await cerezler()).join(','));
+denetle('localStorage + sessionStorage _gcl* temizlendi', await js(`!Object.keys(localStorage).some(k=>/^_gcl/.test(k))&&!Object.keys(sessionStorage).some(k=>/^_gcl/.test(k))`));
 
 console.log('H · EN sayfa');
 await cerezTemizle();
 await git('/en/');
-denetle('EN metin', await js(`document.querySelector('#ncz-b1').textContent==='Your cookie choices'&&document.querySelector('.ncz-k1 [data-ncz=kabul]').textContent==='Accept all'`));
-denetle('EN alt bilgi bağlantısı', await js(`[...document.querySelectorAll('footer a[href="#cerez-ayarlari"]')].map(a=>a.textContent).join()==='Cookie settings'`));
+denetle('EN metin', await js(`document.querySelector('#ncz-b1').textContent===${JSON.stringify(METIN.en.banner_baslik)}&&document.querySelector('.ncz-k1 [data-ncz=kabul]').textContent===${JSON.stringify(METIN.en.btn_kabul)}`));
+denetle('EN alt bilgi bağlantısı', await js(`[...document.querySelectorAll('footer a[href="#cerez-ayarlari"]')].map(a=>a.textContent).join()===${JSON.stringify(METIN.en.altbilgi_baglanti)}`));
 denetle('EN: Google isteği yok', googleIstekleri().length === 0);
 await ekran('H_en_masaustu_pencere');
 

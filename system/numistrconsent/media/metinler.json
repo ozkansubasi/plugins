@@ -1,47 +1,95 @@
 {
-  "_not": "İSKELET — Prime'ın metinler.json dosyası (Drive OTURUM/raporlar/cerez_onayi/) gelince bu dosyanın yerine konur. Şema ve anahtar adları değişmez. Bu metinle yayına alınmaz.",
-  "surum": "2026-11-iskelet",
+  "surum": "2026-11-v1",
   "tr": {
-    "banner_baslik": "Çerez tercihleriniz",
-    "banner_metin": "Sitenin çalışması için zorunlu çerezler kullanıyoruz. Ziyaretleri ölçmek (analitik) ve reklamlarımızın etkisini görmek (pazarlama) için çerezleri yalnız onay verirseniz kullanırız. Seçiminizi istediğiniz zaman alt bilgideki “Çerez ayarları” bağlantısından değiştirebilirsiniz.",
+    "banner_baslik": "Çerezler hakkında",
+    "banner_metin": "Siteyi çalıştırmak için zorunlu çerezler kullanırız. İzin verirseniz, siteyi nasıl kullandığınızı ölçmek (analitik) ve reklam kampanyalarımızın sonuçlarını değerlendirmek (pazarlama) için de çerez kullanırız. Seçiminiz size kalmış; reddetmek siteyi kullanmanızı etkilemez ve seçiminizi dilediğiniz zaman 'Çerez ayarları'ndan değiştirebilirsiniz.",
     "btn_kabul": "Tümünü kabul et",
     "btn_ret": "Tümünü reddet",
     "btn_ayarlar": "Ayarlar",
-    "ayar_baslik": "Çerez ayarları",
-    "ayar_giris": "Her kategori için izin verip vermediğinizi seçin. Zorunlu çerezler sitenin çalışması için gereklidir ve kapatılamaz.",
+    "ayar_baslik": "Çerez tercihleri",
+    "ayar_giris": "Zorunlu çerezler dışındaki çerezler yalnızca izin verirseniz kullanılır. Kategorileri tek tek açıp kapatabilirsiniz.",
     "kat_zorunlu_ad": "Zorunlu",
-    "kat_zorunlu_aciklama": "Oturum ve çerez tercihinizin hatırlanması gibi sitenin çalışması için gereken çerezler.",
+    "kat_zorunlu_aciklama": "Oturumun ve güvenliğin sürmesi, dil ve çerez tercihinizin hatırlanması için gerekir. Bu çerezler kapatılamaz ve reklam ya da ölçümleme amacıyla kullanılmaz.",
     "kat_analitik_ad": "Analitik",
-    "kat_analitik_aciklama": "Google Analytics ile ziyaretlerin sayılması ve sitenin nasıl kullanıldığının ölçülmesi.",
+    "kat_analitik_aciklama": "Sayfaların nasıl kullanıldığını (ziyaret sayısı, hangi sayfaların açıldığı, mağaza bağlantılarına tıklamalar) ölçmemize ve siteyi geliştirmemize yardımcı olur. Google Analytics ile çalışır.",
     "kat_pazarlama_ad": "Pazarlama",
-    "kat_pazarlama_aciklama": "Google Ads ile reklamlarımızın sonuçlarının ölçülmesi. Kişiselleştirilmiş reklam ve yeniden hedefleme kullanılmaz.",
-    "btn_kaydet": "Seçimi kaydet",
+    "kat_pazarlama_aciklama": "Google Ads kampanyalarımızın, siteyi ziyaret edenlerin uygulamayı indirmesine katkısını ölçmemizi sağlar. Bu sitede reklam gösterilmez ve kişiselleştirilmiş reklam (yeniden hedefleme) için kullanılmaz.",
+    "btn_kaydet": "Seçimleri kaydet",
     "altbilgi_baglanti": "Çerez ayarları",
-    "politika_baglanti_metin": "Gizlilik Politikası"
+    "politika_baglanti_metin": "Ayrıntılar için KVKK ve Gizlilik Politikamızı okuyun."
   },
   "en": {
-    "banner_baslik": "Your cookie choices",
-    "banner_metin": "We use strictly necessary cookies to run this site. We use cookies to measure visits (analytics) and to see how our ads perform (marketing) only if you consent. You can change your choice at any time with the “Cookie settings” link in the footer.",
+    "banner_baslik": "About cookies",
+    "banner_metin": "We use essential cookies to run the site. With your permission, we also use cookies to measure how the site is used (analytics) and to evaluate the results of our ad campaigns (marketing). The choice is yours: declining does not affect your use of the site, and you can change your mind at any time via 'Cookie settings'.",
     "btn_kabul": "Accept all",
     "btn_ret": "Reject all",
     "btn_ayarlar": "Settings",
-    "ayar_baslik": "Cookie settings",
-    "ayar_giris": "Choose whether you allow each category. Strictly necessary cookies are needed for the site to work and cannot be switched off.",
-    "kat_zorunlu_ad": "Strictly necessary",
-    "kat_zorunlu_aciklama": "Cookies the site needs to work, such as your session and remembering your cookie choice.",
+    "ayar_baslik": "Cookie preferences",
+    "ayar_giris": "Apart from essential cookies, cookies are used only if you allow them. You can switch each category on or off.",
+    "kat_zorunlu_ad": "Essential",
+    "kat_zorunlu_aciklama": "Needed to keep your session and the site secure, and to remember your language and cookie choice. These cookies cannot be switched off and are not used for advertising or measurement.",
     "kat_analitik_ad": "Analytics",
-    "kat_analitik_aciklama": "Counting visits and measuring how the site is used, with Google Analytics.",
+    "kat_analitik_aciklama": "Helps us measure how pages are used (visits, pages opened, clicks on store links) so we can improve the site. Provided by Google Analytics.",
     "kat_pazarlama_ad": "Marketing",
-    "kat_pazarlama_aciklama": "Measuring the results of our ads with Google Ads. No personalised advertising or retargeting.",
+    "kat_pazarlama_aciklama": "Lets us measure how our Google Ads campaigns contribute to app downloads by site visitors. This site shows no ads and does not use this for personalised ads (retargeting).",
     "btn_kaydet": "Save choices",
     "altbilgi_baglanti": "Cookie settings",
-    "politika_baglanti_metin": "Privacy Policy"
+    "politika_baglanti_metin": "Read our Privacy Policy (GDPR) for details."
   },
   "cerezler": [
-    { "ad": "numistr_cerez_tercihi", "saglayici": "NumisTR", "kategori": "zorunlu", "amac_tr": "Çerez tercihinizi hatırlar.", "amac_en": "Remembers your cookie choice.", "sure_tr": "6 ay", "sure_en": "6 months" },
-    { "ad": "Joomla oturum çerezi (rastgele ad)", "saglayici": "NumisTR", "kategori": "zorunlu", "amac_tr": "Oturumu sürdürür (giriş, formlar).", "amac_en": "Keeps your session (sign-in, forms).", "sure_tr": "Oturum", "sure_en": "Session" },
-    { "ad": "_ga", "saglayici": "Google Analytics", "kategori": "analitik", "amac_tr": "Ziyaretçileri ayırt etmek için.", "amac_en": "Distinguishes visitors.", "sure_tr": "2 yıl", "sure_en": "2 years" },
-    { "ad": "_ga_4H308X9TS1", "saglayici": "Google Analytics", "kategori": "analitik", "amac_tr": "Oturum durumunu saklar.", "amac_en": "Stores session state.", "sure_tr": "2 yıl", "sure_en": "2 years" },
-    { "ad": "_gcl_au", "saglayici": "Google Ads", "kategori": "pazarlama", "amac_tr": "Reklam tıklamalarından gelen ziyaretleri ölçer.", "amac_en": "Measures visits coming from ad clicks.", "sure_tr": "90 gün", "sure_en": "90 days" }
+    {
+      "ad": "(Joomla oturum çerezi; ad rastgele 32 karakter)",
+      "saglayici": "numistr.org (birinci taraf)",
+      "kategori": "zorunlu",
+      "amac_tr": "Oturum sürekliliği ve güvenlik.",
+      "amac_en": "Session continuity and security.",
+      "sure_tr": "Oturum (tarayıcı kapanana kadar)",
+      "sure_en": "Session (until the browser is closed)"
+    },
+    {
+      "ad": "numistr_cerez_tercihi",
+      "saglayici": "numistr.org (birinci taraf)",
+      "kategori": "zorunlu",
+      "amac_tr": "Çerez tercihinizi ve sürümünü hatırlar.",
+      "amac_en": "Remembers your cookie choice and its version.",
+      "sure_tr": "6 ay",
+      "sure_en": "6 months"
+    },
+    {
+      "ad": "_ga",
+      "saglayici": "Google Analytics (birinci taraf çerez, Google aracı)",
+      "kategori": "analitik",
+      "amac_tr": "Ziyaretçileri ayırt ederek kullanım istatistiği üretir.",
+      "amac_en": "Distinguishes visitors to produce usage statistics.",
+      "sure_tr": "2 yıla kadar (tarayıcı sınırı 400 gün)",
+      "sure_en": "Up to 2 years (browser limit 400 days)"
+    },
+    {
+      "ad": "_ga_4H308X9TS1",
+      "saglayici": "Google Analytics 4 (birinci taraf çerez, Google aracı)",
+      "kategori": "analitik",
+      "amac_tr": "Oturum durumunu saklar.",
+      "amac_en": "Stores session state.",
+      "sure_tr": "2 yıla kadar (tarayıcı sınırı 400 gün)",
+      "sure_en": "Up to 2 years (browser limit 400 days)"
+    },
+    {
+      "ad": "_gcl_au",
+      "saglayici": "Google Ads / Google etiketi (birinci taraf çerez, Google aracı)",
+      "kategori": "pazarlama",
+      "amac_tr": "Reklam tıklamasından sonraki dönüşümleri (uygulama indirme yönlendirmesi) ölçer.",
+      "amac_en": "Measures conversions after an ad click (app-download referral).",
+      "sure_tr": "90 gün",
+      "sure_en": "90 days"
+    },
+    {
+      "ad": "_gcl_ls (localStorage)",
+      "saglayici": "Google etiketi (birinci taraf depolama, Google aracı)",
+      "kategori": "pazarlama",
+      "amac_tr": "Reklam dönüşüm ölçümü için tıklama bilgisini saklar.",
+      "amac_en": "Stores click information for ad conversion measurement.",
+      "sure_tr": "Kalıcı (elle silinene kadar; tarayıcı yerel depolaması)",
+      "sure_en": "Persistent (until cleared; browser local storage)"
+    }
   ]
 }

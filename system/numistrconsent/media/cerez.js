@@ -61,19 +61,22 @@
   /** İzin verilmeyen kategorinin çerezlerini siler (ilk açılışta eski çerezler dahil). */
   function temizle(a, p) {
     if (!a) {
-      sil(/^_ga($|_)/);
+      sil(/^(_ga($|_)|_gid$|_gat)/);
     }
 
     if (!p) {
       sil(/^_gcl_/);
 
-      try {
-        Object.keys(w.localStorage).forEach(function (k) {
-          if (/^_gcl/.test(k)) {
-            w.localStorage.removeItem(k);
-          }
-        });
-      } catch (e) { /* depolama kapalı */ }
+      ['localStorage', 'sessionStorage'].forEach(function (tur) {
+        try {
+          var depo = w[tur];
+          Object.keys(depo).forEach(function (k) {
+            if (/^_gcl/.test(k)) {
+              depo.removeItem(k);
+            }
+          });
+        } catch (e) { /* depolama kapalı */ }
+      });
     }
   }
 
