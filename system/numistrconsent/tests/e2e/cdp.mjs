@@ -60,9 +60,13 @@ async function baglan() {
   await cdp('Network.setBlockedURLs', { urls: ENGEL });
   await cdp('Network.setCacheDisabled', { cacheDisabled: true });
   // Y4: GA4 olayları çoğunlukla sendBeacon gövdesinde gider; DevTools bu gövdeyi vermediği için sayfa içinden izlenir.
-  await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `(function(){try{var sb=navigator.sendBeacon&&navigator.sendBeacon.bind(navigator);
-if(sb){navigator.sendBeacon=function(u,b){try{if(/collect/.test(String(u)))console.log('NCZBEACON '+u+' || '+(typeof b==='string'?b:''));}catch(e){}return sb(u,b);};}
-var f=window.fetch;if(f){window.fetch=function(u,o){try{if(/collect/.test(String(u&&u.url||u)))console.log('NCZFETCH '+(u&&u.url||u)+' || '+(o&&typeof o.body==='string'?o.body:''));}catch(e){}return f.apply(this,arguments);};}}catch(e){}})();` });
+  await cdp('Page.addScriptToEvaluateOnNewDocument', { source: `(function(){try{
+function yaz(tur,u,b){try{if(b&&typeof b!=='string'&&b.text){b.text().then(function(x){console.log('NCZ'+tur+' '+u+' || '+x);});}
+else if(b&&typeof b!=='string'&&(b instanceof ArrayBuffer||ArrayBuffer.isView(b))){console.log('NCZ'+tur+' '+u+' || '+new TextDecoder().decode(b));}
+else{console.log('NCZ'+tur+' '+u+' || '+(b||''));}}catch(e){}}
+var sb=navigator.sendBeacon&&navigator.sendBeacon.bind(navigator);
+if(sb){navigator.sendBeacon=function(u,b){if(/collect/.test(String(u)))yaz('BEACON',u,b);return sb(u,b);};}
+var f=window.fetch;if(f){window.fetch=function(u,o){var s=String(u&&u.url||u);if(/collect/.test(s))yaz('FETCH',s,o&&o.body);return f.apply(this,arguments);};}}catch(e){}})();` });
 }
 
 async function git(yol, bekle = 4000) {
@@ -257,9 +261,15 @@ for (const [ad, ua, magazaAd] of [['iPhone', IPHONE, 'apple'], ['Android', ANDRO
   denetle(`(a) ${ad} a:1 — bizim GA4 page_view'u yönlendirmeden ÖNCE gidiyor`, pv && a.magaza && pv.tn <= a.magaza.tn,
     pv ? `page_view ${pv.tn - a.doc.tn} ms · yönlendirme ${ms(a.magaza, a.doc)} ms` : 'page_view gitmedi');
   denetle(`(a) ${ad} a:1 — yönlendirme 2,1 sn yedeğinden önce (event_callback)`, a.magaza && a.doc && (a.magaza.t - a.doc.t) < 2.0, ms(a.magaza, a.doc) + ' ms');
-  // BULGU (KARAR GEREKİYOR): sayfa kodundaki gtag('event') bu kapsayıcıda GA4'e yönlenmiyor — GTM onu yalnız tetikleyici
-  // olayı sayıyor, bağlı GA4 etiketi yok; event_callback'i teslim etmeden çağırıyor. Sayaçta değil, gözlem olarak yazılır.
-  console.log(`  BULGU (a) ${ad}: app_store_redirect GA4'e ${a.olay ? 'GİTTİ ' + (olayUrl.match(/ep\.(store|lang)=[^&\s]+/g) || []).join(',') : 'GİTMEDİ'} · GA4 olayları: ${[...new Set(gonderimler.map((g) => (g.metin.match(/[?&]en=([^&\s]+)/) || [])[1]).filter(Boolean))].join(',')}`);
+  // GTM sürüm 5 (18.11, Prime): olayı 'GA4 - app_store_redirect' etiketi gönderir (CE tetikleyici, eventModel.store/lang).
+  // Sayfa kodundaki gtag('event') canlıda GA4'e doğrudan gitmez (önizleme kipi ayrı davranır) → tek sayım beklenir.
+  const olaylar = gonderimler.filter((g) => /tid=G-4H308X9TS1/.test(g.metin)).flatMap((g) => g.metin.split(/\r?\n| \|\| /))
+    .filter((l) => /(^|[?&])en=app_store_redirect(&|$)/.test(l));
+  const olayGon = gonderimler.find((g) => /en=app_store_redirect/.test(g.metin));
+  denetle(`(a) ${ad} a:1 — TEK app_store_redirect olayı`, olaylar.length === 1, `${olaylar.length} olay · GA4 olayları: ${[...new Set(gonderimler.flatMap((g) => [...g.metin.matchAll(/(?:^|[?&\s])en=([^&\s]+)/g)].map((m) => m[1])))].join(',')}`);
+  const ep = (olaylar[0] || '').match(/ep\.(store|lang)=[^&\s]*/g) || [];
+  denetle(`(a) ${ad} a:1 — ep.store=${magazaAd} ve ep.lang=tr`, ep.includes('ep.store=' + magazaAd) && ep.includes('ep.lang=tr'), ep.join(','));
+  denetle(`(a) ${ad} a:1 — olay yönlendirmeden ÖNCE gönderildi`, olayGon && a.magaza && olayGon.tn <= a.magaza.tn, olayGon ? `olay ${olayGon.tn - a.doc.tn} ms · yönlendirme ${ms(a.magaza, a.doc)} ms` : 'olay yok');
 }
 const b = await appDene(IPHONE, { a: 1, p: 0 }, { gaEngel: true });
 denetle('(b) a:1, GA alan adları engelli — yönlendirme ≤ 2,1 sn', b.magaza && b.doc && (b.magaza.t - b.doc.t) <= 2.1, b.magaza ? ms(b.magaza, b.doc) + ' ms' : 'yönlendirme yok');
@@ -271,7 +281,7 @@ for (const [ad, cerez] of [['çerez yok', null], ['a:0,p:0', { a: 0, p: 0 }]]) {
 const d = await appDene(ANDROID, { a: 0, p: 1 }, { sure: 3500 });
 const dGcs = [...new Set(d.google.map((i) => (i.url.match(/[?&]gcs=([^&]+)/) || [])[1]).filter(Boolean))];
 const dToplama = d.google.filter((i) => /collect/.test(i.url));
-denetle('(d) a:0,p:1 — app_store_redirect olayı yok', !d.olay);
+denetle('(d) a:0,p:1 — app_store_redirect olayı yok', !d.olay && !gonderimler.some((g) => /en=app_store_redirect/.test(g.metin)));
 denetle('(d) a:0,p:1 — yönlendirme hemen (<300 ms)', d.magaza && d.doc && (d.magaza.t - d.doc.t) < 0.3, d.magaza ? ms(d.magaza, d.doc) + ' ms' : 'yönlendirme yok');
 console.log(`  GÖZLEM (d): GTM yüklendi=${d.gtm} · GA4 toplama isteği=${dToplama.length} · gcs=${dGcs.join(',') || '—'} · olaylar=${[...new Set(dToplama.map((i) => (i.url.match(/[?&]en=([^&]+)/) || [])[1]).filter(Boolean))].join(',') || '—'}`);
 fs.writeFileSync(OUT + 'y4_gozlem_d.json', JSON.stringify({ gtm: d.gtm, toplama: dToplama.map((i) => i.url), gcs: dGcs }, null, 1));
