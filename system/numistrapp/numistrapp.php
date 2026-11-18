@@ -11,8 +11,9 @@
  * iPhone/iPad → App Store, Android → Google Play, masaüstü/bilinmeyen → iki rozetli sayfa (yönlendirme yok).
  *
  * Ölçüm şartı: yönlendirme sunucuda (301/302) DEĞİL, istemcide. Sayfa sitedeki GTM kapsayıcısını aynen
- * yükler, `dataLayer.push({event:'app_store_redirect', store:'apple'|'google', lang:'tr'|'en'})` iter,
- * GTM etiketleri bitince (eventCallback) ya da en geç 1 sn sonra mağazaya gider. Gelen adresteki utm_*
+ * yükler, GA4 hedefi (google_tag_manager["G-…"]) hazır olunca — en çok 1,2 sn bekleyerek — olayı
+ * `gtag('event','app_store_redirect',{store, lang, event_callback, event_timeout:800})` ile kendisi gönderir ve GA4
+ * isteği gidince (event_callback) ya da en geç 2,1 sn sonra mağazaya gider. Gelen adresteki utm_*
  * parametreleri sayfa adresinde kalır (GA4 page_view okur); Google Play bağlantısına ayrıca `referrer`
  * olarak eklenir (Play Install Referrer → uygulamadaki Firebase kurulum kaynağı).
  * Sayfa noindex (meta + X-Robots-Tag). GTM / GA4 / Ads ayarları Prime'da.
@@ -21,8 +22,13 @@
  *
  * 1.1.0 (Prime NT-261117-013541j9 + EK -014937av, çerez onayı): "Sistem - NumisTR Çerez Onayı" eklentisi açıksa
  * sayfa pencere göstermez, tercih çerezini (numistr_cerez_tercihi) tarayıcıda okur. Geçerli tercihte analitik ya da
- * pazarlama onaylıysa consent default + update ile GTM yüklenir ve eventCallback akışı sürer; tercih yoksa, eskiyse
- * ya da reddedilmişse GTM hiç yüklenmez ve yönlendirme beklemeden yapılır. Çerez eklentisi kapalıysa 1.0.0 davranışı.
+ * pazarlama onaylıysa consent default + update ile GTM yüklenir. Olay YALNIZ analitik onayı varsa gönderilir
+ * (`__nczAnalitik`); tercih yoksa, eskiyse, reddedilmişse ya da yalnız pazarlama onaylıysa olay gitmez ve
+ * yönlendirme beklemeden yapılır. Çerez eklentisi kapalıysa GTM şablondaki gibi yüklenir, olay ve 2 sn yedek aynı.
+ *
+ * Prime Y4 (NT-261118-110022oc, kullanıcı onayı 18.11): eski `dataLayer.push({event, eventCallback, eventTimeout:800})`
+ * yolu kalktı. Olaya bağlı GTM etiketi olmadığı için GTM eventCallback'i hemen çağırıyordu; mobilde yönlendirme
+ * anında gtag/js beklemedeydi ve GA4'e hiç istek gitmiyordu (Prime öykünme ölçümü 17.11).
  */
 
 defined('_JEXEC') or die;
@@ -199,10 +205,16 @@ class PlgSystemNumistrapp extends CMSPlugin
             . 'if(!store)return;'
             . 'document.documentElement.className+=" yonlendir";'
             . 'var gitti=false;function git(){if(gitti)return;gitti=true;location.replace(U[store]);}'
-            . ($onay === null ? '' : 'if(!window.__nczOnay){git();return;}')
+            . ($onay === null ? '' : 'if(!window.__nczAnalitik){git();return;}')
             . 'window.dataLayer=window.dataLayer||[];'
-            . 'window.dataLayer.push({event:"app_store_redirect",store:store,lang:L,eventCallback:git,eventTimeout:800});'
-            . 'setTimeout(git,1000);'
+            . 'var g=window.gtag||function(){window.dataLayer.push(arguments);};'
+            // GA4 hedefi (google_tag_manager["G-…"]) kurulmadan gönderilen olayı GTM teslim etmeden geri çağırıyor
+            // (e2e 18.11: yönlendirme 172 ms, olay hiç gitmedi). Hedef hazır olunca gönder; en çok 1,2 sn bekle.
+            . 'var t0=Date.now();(function bekle(){if(gitti)return;var m=window.google_tag_manager||{};'
+            . 'var hedef=Object.keys(m).filter(function(k){return k.indexOf("G-")===0;})[0];'
+            . 'if(hedef){g("event","app_store_redirect",{send_to:hedef,store:store,lang:L,event_callback:git,event_timeout:800});return;}'
+            . 'if(Date.now()-t0<1200){setTimeout(bekle,50);}else{git();}})();'
+            . 'setTimeout(git,2100);'
             . '})();';
 
         if ($onay !== null) {
@@ -211,7 +223,7 @@ class PlgSystemNumistrapp extends CMSPlugin
             $gtm  = '<script>(function(w,d){var A=' . $ayar . ',t=null;'
                 . 'try{var m=d.cookie.match(new RegExp("(?:^|;\\\\s*)"+A.c+"=([^;]*)"));'
                 . 'if(m){t=JSON.parse(decodeURIComponent(m[1]));if(!t||t.v!==A.v){t=null;}}}catch(e){t=null;}'
-                . 'w.__nczOnay=!!(t&&(t.a||t.p)&&A.g);if(!w.__nczOnay){return;}'
+                . 'w.__nczAnalitik=!!(t&&t.a&&A.g);w.__nczOnay=!!(t&&(t.a||t.p)&&A.g);if(!w.__nczOnay){return;}'
                 . 'w.dataLayer=w.dataLayer||[];w.gtag=w.gtag||function(){w.dataLayer.push(arguments);};var g=w.gtag;'
                 . 'g("consent","default",{ad_storage:"denied",ad_user_data:"denied",ad_personalization:"denied",analytics_storage:"denied",wait_for_update:500});'
                 . 'g("set","ads_data_redaction",true);g("set","url_passthrough",false);'
