@@ -21,5 +21,5 @@ php -S "127.0.0.1:$SITE_PORT" -t "$NCZ_DIR/site" >"$NCZ_DIR/php.log" 2>&1 & PHP=
 trap 'kill $PHP $CH 2>/dev/null || true' EXIT
 curl -s -o /dev/null --retry 30 --retry-connrefused --retry-delay 1 "http://127.0.0.1:$CDP_PORT/json/version"
 curl -s -o /dev/null --retry 10 --retry-connrefused --retry-delay 1 "$NCZ_SITE/tr/"
-node cdp.mjs
+node "${NCZ_PROBE:-cdp.mjs}"
 echo "çıktı: $NCZ_DIR/cikti"
