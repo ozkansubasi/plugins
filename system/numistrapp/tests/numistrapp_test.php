@@ -71,7 +71,7 @@ namespace {
     check('noindex meta', strpos($html, '<meta name="robots" content="noindex, nofollow">') !== false);
     check('lang=tr', strpos($html, '<html lang="tr">') !== false);
     check('GTM kapsayıcısı', strpos($html, 'googletagmanager.com/gtm.js?id=') !== false && strpos($html, '"GTM-TRH8ZR6M"') !== false);
-    check('olay adı app_store_redirect (gtag)', strpos($html, 'g("event","app_store_redirect",{store:store,lang:L,event_callback:git,event_timeout:800})') !== false);
+    check('olay adı app_store_redirect (gtag)', strpos($html, 'g("event","app_store_redirect",{send_to:hedef,store:store,lang:L,event_callback:git,event_timeout:800})') !== false);
     check('eski dataLayer olayı yok (Y4)', strpos($html, 'event:"app_store_redirect"') === false && strpos($html, 'eventCallback') === false);
     check('gtag tanımı dataLayer\'a argüman iter', strpos($html, 'var g=window.gtag||function(){window.dataLayer.push(arguments);};') !== false);
     check('GTM olaydan önce', strpos($html, 'gtm.js') < strpos($html, 'app_store_redirect'));
@@ -81,7 +81,7 @@ namespace {
     check('TR metin', strpos($html, 'yönlendiriliyorsunuz') !== false);
     check('istemci yönlendirmesi: location.replace', strpos($html, 'location.replace(U[store])') !== false);
     check('geri dönüş zamanlayıcısı 2,1 sn', strpos($html, 'setTimeout(git,2100)') !== false && strpos($html, 'setTimeout(git,1000)') === false);
-    check('olay GA4 hedefi hazır olunca (google_tag_manager G-…), en çok 1,2 sn', strpos($html, 'Object.keys(m).some(function(k){return k.indexOf("G-")===0;})') !== false
+    check('olay GA4 hedefi hazır olunca (google_tag_manager G-…), en çok 1,2 sn', strpos($html, 'var hedef=Object.keys(m).filter(function(k){return k.indexOf("G-")===0;})[0];') !== false
         && strpos($html, 'if(Date.now()-t0<1200){setTimeout(bekle,50);}else{git();}') !== false);
     check('git tek sefer (gitti bayrağı)', strpos($html, 'var gitti=false;function git(){if(gitti)return;gitti=true;') !== false);
 
@@ -105,7 +105,7 @@ namespace {
     check('onay kipi: ad_personalization her zaman denied', strpos($oh, 'ad_user_data:t.p?"granted":"denied",ad_personalization:"denied"') !== false);
     check('onay kipi: analitik onayı yoksa (yalnız pazarlama dahil) beklemeden yönlendirme, olay yok', strpos($oh, 'if(!window.__nczAnalitik){git();return;}window.dataLayer') !== false
         && strpos($oh, 'if(!window.__nczAnalitik){git();return;}') < strpos($oh, 'g("event","app_store_redirect"'));
-    check('onay kipi: analitik onayında olay (hedef hazır olunca)', strpos($oh, 'g("event","app_store_redirect",{store:store,lang:L,event_callback:git,event_timeout:800});return;}') !== false);
+    check('onay kipi: analitik onayında olay (hedef hazır olunca)', strpos($oh, 'g("event","app_store_redirect",{send_to:hedef,store:store,lang:L,event_callback:git,event_timeout:800});return;}') !== false);
     check('onay kipi: eski dataLayer olayı yok', strpos($oh, 'eventCallback') === false && strpos($oh, 'event:"app_store_redirect"') === false);
     check('onay kipi: pencere yok', strpos($oh, 'ncz') === false || strpos($oh, 'ncz-veri') === false);
     $ohx = PlgSystemNumistrapp::sayfa('tr', 'GTM-x"><script>', $u, $onay);
