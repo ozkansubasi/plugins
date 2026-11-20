@@ -2,7 +2,7 @@
   "surum": "2026-11-v1",
   "tr": {
     "banner_baslik": "Çerezler hakkında",
-    "banner_metin": "Siteyi çalıştırmak için zorunlu çerezler kullanırız. İzin verirseniz, siteyi nasıl kullandığınızı ölçmek (analitik) ve reklam kampanyalarımızın sonuçlarını değerlendirmek (pazarlama) için de çerez kullanırız. Seçiminiz size kalmış; reddetmek siteyi kullanmanızı etkilemez ve seçiminizi dilediğiniz zaman 'Çerez ayarları'ndan değiştirebilirsiniz.",
+    "banner_metin": "Sitenin çalışması için zorunlu çerezler kullanıyoruz. Siteyi nasıl kullandığınızı anlamak için analitik, reklam kampanyalarımızın sonuçlarını ölçmek için de pazarlama çerezleri kullanmak istiyoruz. Hangilerine izin vereceğinizi 'Ayarlar'dan seçebilir, tercihinizi dilediğiniz zaman sayfanın altındaki 'Çerez ayarları' bağlantısından değiştirebilirsiniz.",
     "btn_kabul": "Tümünü kabul et",
     "btn_ret": "Tümünü reddet",
     "btn_ayarlar": "Ayarlar",
@@ -20,7 +20,7 @@
   },
   "en": {
     "banner_baslik": "About cookies",
-    "banner_metin": "We use essential cookies to run the site. With your permission, we also use cookies to measure how the site is used (analytics) and to evaluate the results of our ad campaigns (marketing). The choice is yours: declining does not affect your use of the site, and you can change your mind at any time via 'Cookie settings'.",
+    "banner_metin": "We use essential cookies to make this site work. We'd also like to use analytics cookies to understand how you use the site, and marketing cookies to measure the results of our ad campaigns. You can choose which ones to allow in 'Settings' and change your choice at any time via 'Cookie settings' at the bottom of the page.",
     "btn_kabul": "Accept all",
     "btn_ret": "Reject all",
     "btn_ayarlar": "Settings",
