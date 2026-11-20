@@ -292,6 +292,70 @@ const doc3 = istekler.find((i) => i.url.startsWith(SITE + '/tr/app'));
 const play = istekler.find((i) => /play\.google\.com\/store/.test(i.url));
 denetle('Android onaysız: Play\'e beklemeden, bizim GTM yok', play && doc3 && (play.t - doc3.t) < 0.3 && !istekler.some((i) => /GTM-TRH8ZR6M/.test(i.url)), (play && doc3 ? Math.round((play.t - doc3.t) * 1000) + ' ms' : 'yönlendirme yok') + ' · gtm: ' + istekler.filter((i) => /googletagmanager/.test(i.url)).map((i) => Math.round((i.t - doc3.t) * 1000) + 'ms ' + i.url.slice(0, 70)).join(' | '));
 
+console.log('L · rıza kaydı (ADR-013)');
+const YEREL = SITE.startsWith('http://127.0.0.1');
+const KD = process.env.NCZ_DIR || '/tmp/ncz_e2e';
+const kayitlar = () => { try { return fs.readFileSync(KD + '/kayit.log', 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (e) { return []; } };
+const kayitIstekleri = () => istekler.filter((i) => /option=com_ajax/.test(i.url) && i.tur !== 'Document');
+const tercihOku = () => js(`(()=>{const m=document.cookie.match(/numistr_cerez_tercihi=([^;]+)/);return m?JSON.parse(decodeURIComponent(m[1])):null})()`);
+if (!YEREL) {
+  console.log('  (canlıya karşı koşuda atlandı: kayıtlar sunucu tablosunda, ssh ile denetlenir)');
+} else {
+  for (const f of ['kayit.log', 'kayit_ret.log', 'kayit_hata']) { try { fs.unlinkSync(KD + '/' + f); } catch (e) { /* yok */ } }
+  await cdp('Network.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36' });
+  await cerezTemizle();
+  await git('/tr/');
+  denetle('açılışta kayıt isteği yok', kayitIstekleri().length === 0);
+  await js(`document.querySelector('#ncz .ncz-k1 [data-ncz=kabul]').click()`);
+  await sleep(1000);
+  let K = kayitlar();
+  const t1 = await tercihOku();
+  denetle('kabul → tam 1 istek, 1 kayıt', kayitIstekleri().length === 1 && K.length === 1, kayitIstekleri().length + ' istek · ' + K.length + ' kayıt');
+  denetle('kayıt: tumunu_kabul, katman 1, a1 p1, güncel sürüm, tr, /tr/', K[0] && K[0].eylem === 'tumunu_kabul' && K[0].katman === 1 && K[0].analitik === 1 && K[0].pazarlama === 1
+    && K[0].kisisellestirme === 0 && K[0].metin_surumu === METIN.surum && K[0].dil === 'tr' && K[0].sayfa === '/tr/', JSON.stringify(K[0]));
+  denetle('çerezdeki kimlik + zaman = kayıttaki; "gönderilmedi" işareti kalktı', t1 && K[0] && t1.i === K[0].onay_kimligi && t1.t === K[0].istemci_zaman && !t1.g, JSON.stringify(t1));
+  await js(`document.querySelector('footer a[href="#cerez-ayarlari"]').click()`);
+  await sleep(400);
+  denetle('tercih merkezinde "Onay kimliğiniz" = çerezdeki kimlik', await js(`(()=>{const p=document.querySelector('.ncz-kimlik');return !!p&&!p.hidden&&p.querySelector('code').textContent===${JSON.stringify((t1 && t1.i) || '')}&&p.textContent.indexOf('Onay kimliğiniz: ')===0})()`));
+  istekler.length = 0;
+  await js(`document.querySelector('[data-ncz-kat=pazarlama]').checked=false;document.querySelector('.ncz-k2 [data-ncz=kaydet]').click()`);
+  await sleep(3500);
+  K = kayitlar();
+  const t2 = await tercihOku();
+  const kIst = kayitIstekleri();
+  const belge = istekler.find((i) => i.tur === 'Document');
+  denetle('geri çekme → 2. kayıt: geri_cekme, katman 2, a1 p0, aynı kimlik', K.length === 2 && K[1].eylem === 'geri_cekme' && K[1].katman === 2 && K[1].analitik === 1 && K[1].pazarlama === 0
+    && K[1].onay_kimligi === K[0].onay_kimligi, JSON.stringify(K[1] || null));
+  denetle('kayıt isteği sayfa yenilenmeden önce gitti', kIst.length >= 1 && belge && kIst[0].t <= belge.t, kIst.length && belge ? Math.round((belge.t - kIst[0].t) * 1000) + ' ms önce' : 'istek/belge yok');
+  denetle('yenilemeden sonra yeniden gönderim yok, işaret yok', kayitlar().length === 2 && t2 && !t2.g && t2.i === t1.i, JSON.stringify(t2));
+  fs.writeFileSync(KD + '/kayit_hata', '1');
+  await cerezTemizle();
+  await git('/tr/');
+  await js(`document.querySelector('#ncz .ncz-k1 [data-ncz=ret]').click()`);
+  await sleep(1000);
+  const t3 = await tercihOku();
+  denetle('uç 500 → pencere yine kapandı, ret uygulandı, işaret g=1', (await js(gorunur)) === 'yok' && t3 && t3.a === 0 && t3.p === 0 && t3.g === 1, JSON.stringify(t3));
+  fs.unlinkSync(KD + '/kayit_hata');
+  await git('/tr/');
+  K = kayitlar();
+  const t4 = await tercihOku();
+  const sonK = K[K.length - 1];
+  denetle('sonraki açılışta tek yeniden gönderim: tumunu_ret, aynı kimlik ve zaman, sayfa null', K.length === 3 && sonK.eylem === 'tumunu_ret' && sonK.katman === 1 && t3 && sonK.onay_kimligi === t3.i
+    && sonK.istemci_zaman === t3.t && sonK.sayfa === null && kayitIstekleri().length === 1, JSON.stringify(sonK || null));
+  denetle('yeniden gönderimden sonra işaret kalktı; yeni kimlik (temiz profil)', t4 && !t4.g && t3 && t1 && t3.i !== t1.i);
+  await git('/tr/');
+  denetle('üçüncü açılışta istek yok', kayitIstekleri().length === 0);
+  const uc = SITE + '/index.php?option=com_ajax&plugin=numistrconsent&group=system&format=raw';
+  const gov = JSON.stringify({ i: 'b'.repeat(32), t: Date.now(), v: METIN.surum, e: 'tumunu_kabul', k: 1, a: 1, p: 1, d: 'en', s: '/en/' });
+  const r1 = await fetch(uc, { method: 'POST', body: gov, headers: { Origin: 'https://kotu.example' } });
+  const r2 = await fetch(uc, { method: 'POST', body: gov });
+  const r3 = await fetch(uc, { method: 'POST', body: gov.replace(METIN.surum, 'eski-surum'), headers: { Origin: SITE } });
+  const r4 = await fetch(uc, { method: 'POST', body: gov, headers: { Origin: SITE } });
+  const r5 = await fetch(uc, { method: 'GET' });
+  denetle('uç: yabancı Origin 403 · Origin/Referer yok 403 · eski sürüm 400 · geçerli 204 · GET 405', r1.status === 403 && r2.status === 403 && r3.status === 400 && r4.status === 204 && r5.status === 405,
+    [r1.status, r2.status, r3.status, r4.status, r5.status].join(' '));
+}
+
 const kaldi = sonuc.filter((s) => !s.kosul).length;
 console.log(`\n${sonuc.length - kaldi} geçti, ${kaldi} kaldı`);
 fs.writeFileSync(OUT + 'sonuc.json', JSON.stringify(sonuc, null, 1));

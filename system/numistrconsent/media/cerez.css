@@ -225,3 +225,14 @@
     transition: background-color 0.15s ease;
   }
 }
+
+.ncz-kimlik {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--ncz-ince);
+}
+
+.ncz-kimlik code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}

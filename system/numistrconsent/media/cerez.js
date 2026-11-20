@@ -1,6 +1,7 @@
 /*!
- * plg_system_numistrconsent 1.0.0 — çerez onayı arayüzü (pencere + tercih merkezi).
+ * plg_system_numistrconsent 1.1.0 — çerez onayı arayüzü (pencere + tercih merkezi).
  * Bağımlılık yok. <head> betiği window.NumistrCerez'i kurar; bu dosya ertelenmiş yüklenir.
+ * 1.1.0: her eylem sunucuya rıza kaydı olarak gönderilir (ADR-013); ulaşmazsa sonraki sayfada bir kez yeniden.
  */
 (function (w, d) {
   'use strict';
@@ -26,12 +27,92 @@
   var C = V.c || [];
   var kutu = null;
   var sonOdak = null;
+  var KOD = { tumunu_kabul: 'ka', tumunu_ret: 're', secim_kaydet: 'se', geri_cekme: 'gc' };
+  var EYLEM = { ka: 'tumunu_kabul', re: 'tumunu_ret', se: 'secim_kaydet', gc: 'geri_cekme' };
+  var KIMLIK = /^[0-9a-f]{32}$/;
 
   // --- çerez işleri -------------------------------------------------------
 
-  function tercihYaz(a, p) {
-    var deger = encodeURIComponent(JSON.stringify({ v: A.v, t: Date.now(), a: a ? 1 : 0, p: p ? 1 : 0 }));
+  /** Tercih çerezi: {v, t, a, p, i: onay kimliği, e: eylem kodu, k: katman, g: 1 = kayıt sunucuya henüz ulaşmadı}. */
+  function tercihYaz(o) {
+    var deger = encodeURIComponent(JSON.stringify(o));
     d.cookie = A.c + '=' + deger + '; Max-Age=' + A.s + '; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+  }
+
+  function yeniKimlik() {
+    var b = new Uint8Array(16);
+    var s = '';
+    var j;
+
+    try {
+      (w.crypto || w.msCrypto).getRandomValues(b);
+    } catch (e) {
+      for (j = 0; j < 16; j++) {
+        b[j] = Math.floor(Math.random() * 256);
+      }
+    }
+
+    for (j = 0; j < 16; j++) {
+      s += (b[j] < 16 ? '0' : '') + b[j].toString(16);
+    }
+
+    return s;
+  }
+
+  function sayfaYolu() {
+    return (location.pathname || '/').slice(0, 191);
+  }
+
+  /** Sunucu kaydı aldıysa (ya da yeniden denemenin anlamı yoksa) çerezdeki "gönderilmedi" işaretini kaldırır. */
+  function ulasti(o) {
+    var t = N.tercih;
+
+    if (t && t.i === o.i && t.t === o.t && t.g) {
+      delete t.g;
+      tercihYaz(t);
+    }
+  }
+
+  /** Rıza kaydını sunucuya gönderir (ADR-013). bitti(): istek sonuçlanınca ya da en geç 1 sn sonra, bir kez. */
+  function gonder(o, sayfa, bitti) {
+    var tamam = false;
+    var son = function () {
+      if (!tamam) {
+        tamam = true;
+
+        if (bitti) {
+          bitti();
+        }
+      }
+    };
+
+    if (!V.k || !KIMLIK.test(o.i || '') || !EYLEM[o.e]) {
+      son();
+      return;
+    }
+
+    var govde = JSON.stringify({ i: o.i, t: o.t, v: o.v, e: EYLEM[o.e], k: o.k, a: o.a, p: o.p, d: V.dil === 'en' ? 'en' : 'tr', s: sayfa });
+    w.setTimeout(son, 1000);
+
+    try {
+      if (w.fetch) {
+        w.fetch(V.k, { method: 'POST', body: govde, headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, keepalive: true, credentials: 'same-origin' })
+          .then(function (r) {
+            // 2xx ulaştı; 4xx (429 hariç) yeniden denense de düzelmez. 5xx, 429 ve ağ hatasında işaret kalır.
+            if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 429)) {
+              ulasti(o);
+            }
+            son();
+          }, son);
+      } else if (navigator.sendBeacon && navigator.sendBeacon(V.k, govde)) {
+        ulasti(o);
+        son();
+      } else {
+        son();
+      }
+    } catch (e) {
+      son();
+    }
   }
 
   function alanlar() {
@@ -80,22 +161,38 @@
     }
   }
 
-  function kaydet(a, p) {
+  function kaydet(a, p, eylem, katman) {
     var once = N.tercih;
     var geriCekme = !!(once && ((once.a && !a) || (once.p && !p)));
+    var o = {
+      v: A.v,
+      t: Date.now(),
+      a: a ? 1 : 0,
+      p: p ? 1 : 0,
+      i: once && KIMLIK.test(once.i || '') ? once.i : yeniKimlik(),
+      e: KOD[geriCekme ? 'geri_cekme' : eylem] || KOD.secim_kaydet,
+      k: katman === 1 ? 1 : 2
+    };
 
-    tercihYaz(a, p);
-    N.tercih = { v: A.v, a: a ? 1 : 0, p: p ? 1 : 0 };
+    if (V.k) {
+      o.g = 1;
+    }
+
+    tercihYaz(o);
+    N.tercih = o;
     N.guncelle(a, p);
     temizle(a, p);
+    kapat();
 
     if (geriCekme) {
-      // GTM bellekte kalmasın: çerezler silindi, sayfa yeniden yüklenir.
-      w.location.reload();
+      // GTM bellekte kalmasın: çerezler silindi; kayıt gönderilince (en geç 1 sn) sayfa yeniden yüklenir.
+      gonder(o, sayfaYolu(), function () {
+        w.location.reload();
+      });
       return;
     }
 
-    kapat();
+    gonder(o, sayfaYolu());
   }
 
   // --- arayüz -------------------------------------------------------------
@@ -224,6 +321,10 @@
     s2.appendChild(dugme('ret', M.btn_ret));
     s2.appendChild(dugme('kaydet', M.btn_kaydet));
     k2.appendChild(s2);
+    var kp = ogeYap('p', { 'class': 'ncz-kimlik', hidden: '' });
+    kp.appendChild(d.createTextNode((E.kimlik || 'ID') + ': '));
+    kp.appendChild(ogeYap('code'));
+    k2.appendChild(kp);
 
     ic.appendChild(k1);
     ic.appendChild(k2);
@@ -238,15 +339,16 @@
       }
 
       var eylem = hedef.getAttribute('data-ncz');
+      var katman = hedef.closest('.ncz-k1') ? 1 : 2;
 
       if (eylem === 'kabul') {
-        kaydet(true, true);
+        kaydet(true, true, 'tumunu_kabul', katman);
       } else if (eylem === 'ret') {
-        kaydet(false, false);
+        kaydet(false, false, 'tumunu_ret', katman);
       } else if (eylem === 'ayarlar') {
         ac(2, true);
       } else if (eylem === 'kaydet') {
-        kaydet(secili('analitik'), secili('pazarlama'));
+        kaydet(secili('analitik'), secili('pazarlama'), 'secim_kaydet', katman);
       }
     });
 
@@ -289,6 +391,15 @@
     kutu.querySelector('[data-ncz-kat="analitik"]').checked = !!t.a;
     kutu.querySelector('[data-ncz-kat="pazarlama"]').checked = !!t.p;
 
+    var kp = kutu.querySelector('.ncz-kimlik');
+
+    if (KIMLIK.test(t.i || '')) {
+      kp.querySelector('code').textContent = t.i;
+      kp.hidden = false;
+    } else {
+      kp.hidden = true;
+    }
+
     k1.hidden = katman !== 1;
     k2.hidden = katman !== 2;
     kutu.setAttribute('aria-labelledby', katman === 1 ? 'ncz-b1' : 'ncz-b2');
@@ -330,6 +441,11 @@
 
   // Açılış: izin verilmeyen kategorilerin eski çerezlerini sil; tercih yoksa pencereyi göster.
   temizle(N.tercih && N.tercih.a, N.tercih && N.tercih.p);
+
+  // Önceki sayfada sunucuya ulaşmayan kayıt bir kez yeniden gönderilir (o anki sayfa bilinmiyor → yol null).
+  if (N.tercih && N.tercih.g) {
+    gonder(N.tercih, null);
+  }
 
   if (!N.tercih) {
     ac(1, false);

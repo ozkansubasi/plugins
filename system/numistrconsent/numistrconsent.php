@@ -2,7 +2,7 @@
 /**
  * @package     NumisTR Cookie Consent
  * @subpackage  plg_system_numistrconsent
- * @version     1.0.0
+ * @version     1.1.0
  * @copyright   Copyright (C) 2026 NumisTR. All rights reserved.
  * @license     GNU General Public License version 2 or later
  *
@@ -23,12 +23,22 @@
  *    Sitedeki her `<a href="#cerez-ayarlari">` tercih merkezini açar (politika sayfası metni için).
  *
  * Metinler: media/plg_system_numistrconsent/metinler.json (Prime'ın ortak şeması; adlar değişmez).
+ *
+ * 1.1.0 — rızanın sunucuda kaydı (ADR-013): ziyaretçi bir eylem yapınca (tümünü kabul / ret, seçimleri kaydet,
+ * geri çekme) cerez.js `index.php?option=com_ajax&plugin=numistrconsent&group=system&format=raw` ucuna JSON gönderir;
+ * onAjaxNumistrconsent() doğrular ve `numistr_cerez_rizalari` tablosuna YALNIZ EKLER. Kayıtta rastgele onay kimliği,
+ * sunucu zamanı (UTC), metin sürümü, eylem, katman, seçimler, dil ve sayfa yolu var; IP, User-Agent, hesap ve GA
+ * kimliği YOK. Hız sınırı IP başına saatlik sayaçla (Joomla önbelleği, anahtar HMAC; IP yazılmaz). Saklama süresi
+ * dolan kayıtlar eklemelerin ~1/200'ünde silinir. Geri alma: ayar "Rıza kaydı" = Hayır.
  * /app sayfası (plg_system_numistrapp ≥ 1.1.0) pencere göstermez, aynı çerezi okur.
  */
 
 defined('_JEXEC') or die;
 
+use Joomla\CMS\Cache\CacheControllerFactoryInterface;
+use Joomla\CMS\Factory;
 use Joomla\CMS\Plugin\CMSPlugin;
+use Joomla\CMS\Uri\Uri;
 
 class PlgSystemNumistrconsent extends CMSPlugin
 {
@@ -37,12 +47,19 @@ class PlgSystemNumistrconsent extends CMSPlugin
 
     protected $autoloadLanguage = true;
 
-    public const SURUM          = '1.0.0';
+    public const SURUM          = '1.1.0';
     public const GTM_VARSAYILAN = 'GTM-TRH8ZR6M';
     public const CEREZ          = 'numistr_cerez_tercihi';
     public const SURE_GUN       = 182;
     public const MEDYA          = '/media/plg_system_numistrconsent';
     public const ISARET         = 'id="ncz-veri"';
+    public const TABLO          = 'numistr_cerez_rizalari';
+    public const KAYIT_YOLU     = '/index.php?option=com_ajax&plugin=numistrconsent&group=system&format=raw';
+    public const GOVDE_SINIR    = 1024;
+    public const SAKLAMA_GUN    = 730;
+    public const HIZ_SAAT       = 30;
+    public const EYLEMLER       = ['tumunu_kabul', 'tumunu_ret', 'secim_kaydet', 'geri_cekme'];
+    public const KOKENLER       = ['https://www.numistr.org', 'https://numistr.org'];
 
     /** metinler.json okunamazsa kullanılan en küçük metin (pencere yine çalışır; onaysız ölçüm yine kapalı). */
     private const YEDEK = [
@@ -68,8 +85,8 @@ class PlgSystemNumistrconsent extends CMSPlugin
 
     /** Arayüzde şema dışında kalan küçük etiketler (metinler.json şemasına dokunmamak için burada). */
     private const EK = [
-        'tr' => ['cerezler' => 'Çerezler', 'ad' => 'Ad', 'saglayici' => 'Sağlayıcı', 'amac' => 'Amaç', 'sure' => 'Süre', 'bolge' => 'Çerez tercihleri'],
-        'en' => ['cerezler' => 'Cookies', 'ad' => 'Name', 'saglayici' => 'Provider', 'amac' => 'Purpose', 'sure' => 'Duration', 'bolge' => 'Cookie preferences'],
+        'tr' => ['cerezler' => 'Çerezler', 'ad' => 'Ad', 'saglayici' => 'Sağlayıcı', 'amac' => 'Amaç', 'sure' => 'Süre', 'bolge' => 'Çerez tercihleri', 'kimlik' => 'Onay kimliğiniz'],
+        'en' => ['cerezler' => 'Cookies', 'ad' => 'Name', 'saglayici' => 'Provider', 'amac' => 'Purpose', 'sure' => 'Duration', 'bolge' => 'Cookie preferences', 'kimlik' => 'Your consent ID'],
     ];
 
     public function onAfterRender()
@@ -102,11 +119,216 @@ class PlgSystemNumistrconsent extends CMSPlugin
             'politika'    => (string) $this->params->get('politika_' . $dil, $dil === 'en' ? '/en/privacy-policy-gdpr' : '/tr/kvkk-ve-gizlilik-politikasi'),
             'sablon_gtm'  => (int) $this->params->get('sablon_gtm_ayikla', 1) === 1,
             'medya'       => self::MEDYA,
+            'kayit'       => (int) $this->params->get('kayit_acik', 1) === 1 ? rtrim(Uri::root(true), '/') . self::KAYIT_YOLU : '',
         ]);
 
         if ($yeni !== $body) {
             $this->app->setBody($yeni);
         }
+    }
+
+    // --- rıza kaydı (ADR-013) ------------------------------------------------
+
+    /** com_ajax ucu: POST gövdesini doğrular, hız sınırını uygular, kaydı ekler. Yanıt gövdesizdir (204/400/403/405/429/500). */
+    public function onAjaxNumistrconsent()
+    {
+        $this->yanit($this->app->isClient('site') ? $this->kayitAl() : 403);
+
+        return '';
+    }
+
+    private function kayitAl()
+    {
+        if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? '')) !== 'POST') {
+            return 405;
+        }
+
+        // Kayıt kapalıysa istemci yeniden denemesin: başarı gibi yanıtla.
+        if ((int) $this->params->get('kayit_acik', 1) !== 1) {
+            return 204;
+        }
+
+        $metin = self::metinleriOku(JPATH_ROOT . self::MEDYA . '/metinler.json');
+        $govde = (string) file_get_contents('php://input', false, null, 0, self::GOVDE_SINIR + 1);
+        $kayit = self::kayitDogrula(
+            $govde,
+            (string) ($_SERVER['HTTP_ORIGIN'] ?? ''),
+            (string) ($_SERVER['HTTP_REFERER'] ?? ''),
+            $metin ? (string) $metin['surum'] : 'yedek',
+            self::izinliKokenler()
+        );
+
+        if (is_int($kayit)) {
+            return $kayit;
+        }
+
+        if (!$this->hizUygun((string) ($_SERVER['REMOTE_ADDR'] ?? ''))) {
+            return 429;
+        }
+
+        try {
+            $db = Factory::getDbo();
+            $db->setQuery(self::eklemeSorgusu($db, $kayit))->execute();
+
+            if (random_int(1, 200) === 1) {
+                $gun = max(30, (int) $this->params->get('saklama_gun', self::SAKLAMA_GUN));
+                $db->setQuery('DELETE FROM ' . $db->quoteName(self::TABLO) . ' WHERE ' . $db->quoteName('zaman')
+                    . ' < UTC_TIMESTAMP() - INTERVAL ' . $gun . ' DAY LIMIT 1000')->execute();
+            }
+        } catch (\Throwable $e) {
+            return 500;
+        }
+
+        return 204;
+    }
+
+    private function yanit($kod)
+    {
+        $this->app->setHeader('status', (string) $kod, true);
+        $this->app->setHeader('Cache-Control', 'no-store', true);
+        $this->app->setHeader('Content-Type', 'text/plain; charset=utf-8', true);
+        $this->app->sendHeaders();
+        $this->app->close();
+    }
+
+    /** Sitenin kendi kökeni + numistr.org adları. */
+    private static function izinliKokenler()
+    {
+        $kok = Uri::getInstance(Uri::root())->toString(['scheme', 'host', 'port']);
+
+        return array_values(array_unique(array_merge(self::KOKENLER, [$kok])));
+    }
+
+    /** IP başına saatlik sayaç (Joomla önbelleği). Anahtar HMAC(IP|saat, site sırrı); IP hiçbir yere yazılmaz. */
+    private function hizUygun($ip)
+    {
+        try {
+            $onbellek = Factory::getContainer()->get(CacheControllerFactoryInterface::class)->createCacheController('output', [
+                'defaultgroup' => 'plg_numistrconsent_hiz',
+                'caching'      => true,
+                'lifetime'     => 60,
+            ]);
+            $anahtar = hash_hmac('sha256', $ip . '|' . gmdate('YmdH'), (string) $this->app->get('secret'));
+            $sayi    = (int) $onbellek->get($anahtar);
+
+            if ($sayi >= max(1, (int) $this->params->get('hiz_saat', self::HIZ_SAAT))) {
+                return false;
+            }
+
+            $onbellek->store((string) ($sayi + 1), $anahtar);
+        } catch (\Throwable $e) {
+            // Önbellek çalışmıyorsa kayıt engellenmez (sınır yalnız kötüye kullanım için).
+        }
+
+        return true;
+    }
+
+    /**
+     * Gövdeyi ve kökeni doğrular (Joomla'sız sınanır). Hata: HTTP kodu (int). Başarı: tabloya yazılacak alanlar.
+     * Gövde: {i: 32 hex, t: istemci ms, v: metin sürümü, e: eylem, k: 1|2, a: 0|1, p: 0|1, d: tr|en, s: yol|null}
+     *
+     * @return int|array<string,int|string|null>
+     */
+    public static function kayitDogrula($govde, $origin, $referer, $surum, array $kokenler)
+    {
+        if (!self::kokenUygun($origin, $referer, $kokenler)) {
+            return 403;
+        }
+
+        if ($govde === '' || strlen($govde) > self::GOVDE_SINIR) {
+            return 400;
+        }
+
+        $g = json_decode($govde, true);
+
+        if (!is_array($g)) {
+            return 400;
+        }
+
+        $i = $g['i'] ?? null;
+        $t = $g['t'] ?? null;
+        $e = $g['e'] ?? null;
+        $k = $g['k'] ?? null;
+        $a = $g['a'] ?? null;
+        $p = $g['p'] ?? null;
+        $d = $g['d'] ?? null;
+
+        if (!is_string($i) || !preg_match('~^[0-9a-f]{32}$~', $i)
+            || !is_int($t) || $t < 1600000000000 || $t > 4100000000000
+            || !is_string($g['v'] ?? null) || $g['v'] !== $surum
+            || !is_string($e) || !in_array($e, self::EYLEMLER, true)
+            || !in_array($k, [1, 2], true) || !in_array($a, [0, 1], true) || !in_array($p, [0, 1], true)
+            || !in_array($d, ['tr', 'en'], true)) {
+            return 400;
+        }
+
+        if (($e === 'tumunu_kabul' && ($a !== 1 || $p !== 1)) || ($e === 'tumunu_ret' && ($a !== 0 || $p !== 0))) {
+            return 400;
+        }
+
+        return [
+            'onay_kimligi'    => $i,
+            'istemci_zaman'   => $t,
+            'metin_surumu'    => $surum,
+            'eylem'           => $e,
+            'katman'          => $k,
+            'analitik'        => $a,
+            'pazarlama'       => $p,
+            'kisisellestirme' => 0,
+            'dil'             => $d,
+            'sayfa'           => self::sayfaYolu($g['s'] ?? null),
+        ];
+    }
+
+    /** Origin varsa o, yoksa Referer'ın kökeni izinli listede olmalı; ikisi de yoksa ret. */
+    public static function kokenUygun($origin, $referer, array $kokenler)
+    {
+        if ($origin !== '' && $origin !== 'null') {
+            return in_array(rtrim($origin, '/'), $kokenler, true);
+        }
+
+        if ($referer === '') {
+            return false;
+        }
+
+        $u = parse_url($referer);
+
+        if (empty($u['scheme']) || empty($u['host'])) {
+            return false;
+        }
+
+        return in_array($u['scheme'] . '://' . $u['host'] . (isset($u['port']) ? ':' . $u['port'] : ''), $kokenler, true);
+    }
+
+    /** Yalnız yol: sorgu ve parça atılır, '/' ile başlamalı, denetim karakteri yok, en çok 191 karakter. Uymazsa null. */
+    public static function sayfaYolu($s)
+    {
+        if (!is_string($s) || $s === '') {
+            return null;
+        }
+
+        $s = preg_replace('~[?#].*$~s', '', $s);
+
+        if ($s === '' || $s[0] !== '/' || preg_match('~[\x00-\x1F\x7F]~', $s)) {
+            return null;
+        }
+
+        return mb_substr($s, 0, 191, 'UTF-8');
+    }
+
+    /** INSERT IGNORE: aynı (onay_kimligi, istemci_zaman) ikinci kez eklenmez (istemcinin yeniden denemesi). */
+    public static function eklemeSorgusu($db, array $k)
+    {
+        $sutun = [];
+        $deger = [];
+
+        foreach ($k as $ad => $v) {
+            $sutun[] = $db->quoteName($ad);
+            $deger[] = $v === null ? 'NULL' : (is_int($v) ? (string) $v : $db->quote($v));
+        }
+
+        return 'INSERT IGNORE INTO ' . $db->quoteName(self::TABLO) . ' (' . implode(', ', $sutun) . ', ' . $db->quoteName('zaman') . ')'
+            . ' VALUES (' . implode(', ', $deger) . ', UTC_TIMESTAMP(3))';
     }
 
     public static function dil($etiket)
@@ -142,7 +364,7 @@ class PlgSystemNumistrconsent extends CMSPlugin
     /**
      * Sayfa çıktısını işler (Joomla'sız sınanır).
      *
-     * @param array{dil:string, metin:?array, gtm:string, sure_gun:int, politika:string, sablon_gtm:bool, medya:string} $p
+     * @param array{dil:string, metin:?array, gtm:string, sure_gun:int, politika:string, sablon_gtm:bool, medya:string, kayit?:string} $p
      */
     public static function isle($html, array $p)
     {
@@ -198,7 +420,7 @@ class PlgSystemNumistrconsent extends CMSPlugin
             ];
         }
 
-        $veri = ['dil' => $dil, 'm' => $m, 'e' => self::EK[$dil], 'c' => $cerezler, 'politika' => (string) $p['politika']];
+        $veri = ['dil' => $dil, 'm' => $m, 'e' => self::EK[$dil], 'c' => $cerezler, 'politika' => (string) $p['politika'], 'k' => (string) ($p['kayit'] ?? '')];
         $html = self::onune($html, '</body>', '<script type="application/json" ' . self::ISARET . '>' . json_encode($veri, $jsf) . '</script>');
 
         return $html;

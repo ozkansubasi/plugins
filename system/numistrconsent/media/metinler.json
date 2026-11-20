@@ -1,5 +1,5 @@
 {
-  "surum": "2026-11-v1",
+  "surum": "2026-11-v2",
   "tr": {
     "banner_baslik": "Çerezler hakkında",
     "banner_metin": "Sitenin çalışması için zorunlu çerezler kullanıyoruz. Siteyi nasıl kullandığınızı anlamak için analitik, reklam kampanyalarımızın sonuçlarını ölçmek için de pazarlama çerezleri kullanmak istiyoruz. Hangilerine izin vereceğinizi 'Ayarlar'dan seçebilir, tercihinizi dilediğiniz zaman sayfanın altındaki 'Çerez ayarları' bağlantısından değiştirebilirsiniz.",
@@ -50,8 +50,8 @@
       "ad": "numistr_cerez_tercihi",
       "saglayici": "numistr.org (birinci taraf)",
       "kategori": "zorunlu",
-      "amac_tr": "Çerez tercihinizi ve sürümünü hatırlar.",
-      "amac_en": "Remembers your cookie choice and its version.",
+      "amac_tr": "Çerez tercihinizi, sürümünü ve onay kimliğinizi hatırlar.",
+      "amac_en": "Remembers your cookie choice, its version and your consent ID.",
       "sure_tr": "6 ay",
       "sure_en": "6 months"
     },

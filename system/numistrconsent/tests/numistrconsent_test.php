@@ -123,6 +123,57 @@ namespace {
     $ns = '<body><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X1" height="0" width="0"></iframe></noscript><p>a</p></body>';
     check('noscript iframe gider', PlgSystemNumistrconsent::sablonGtmAyikla($ns) === '<body><p>a</p></body>');
 
+    echo "rıza kaydı (ADR-013)\n";
+    $K = ['https://www.numistr.org', 'https://numistr.org'];
+    $sv = $metin['surum'];
+    $iyi = ['i' => str_repeat('a1', 16), 't' => 1795173501757, 'v' => $sv, 'e' => 'tumunu_kabul', 'k' => 1, 'a' => 1, 'p' => 1, 'd' => 'tr', 's' => '/tr/?utm=x#y'];
+    $dg = function (array $g, $o = 'https://www.numistr.org', $r = '') use ($sv, $K) {
+        return PlgSystemNumistrconsent::kayitDogrula(json_encode($g), $o, $r, $sv, $K);
+    };
+    $k = $dg($iyi);
+    check('geçerli gövde → kayıt alanları', is_array($k) && $k['onay_kimligi'] === $iyi['i'] && $k['istemci_zaman'] === 1795173501757
+        && $k['metin_surumu'] === $sv && $k['eylem'] === 'tumunu_kabul' && $k['katman'] === 1 && $k['analitik'] === 1 && $k['pazarlama'] === 1
+        && $k['kisisellestirme'] === 0 && $k['dil'] === 'tr');
+    check('sayfa: sorgu ve parça atılır', is_array($k) && $k['sayfa'] === '/tr/');
+    check('kayıtta IP / UA alanı yok', is_array($k) && !array_intersect(array_keys($k), ['ip', 'ua', 'user_agent', 'kullanici']));
+    check('yabancı Origin → 403', $dg($iyi, 'https://kotu.example') === 403);
+    check('Origin yok, Referer izinli → kabul', is_array($dg($iyi, '', 'https://numistr.org/en/sayfa?x=1')));
+    check('Origin yok, Referer yabancı → 403', $dg($iyi, '', 'https://kotu.example/tr/') === 403);
+    check('Origin ve Referer yok → 403', $dg($iyi, '', '') === 403);
+    check('Origin "null" → Referer\'a bakılır', $dg($iyi, 'null', '') === 403);
+    check('büyük gövde → 400', PlgSystemNumistrconsent::kayitDogrula(str_repeat('x', 1025), 'https://www.numistr.org', '', $sv, $K) === 400);
+    check('boş / JSON değil → 400', PlgSystemNumistrconsent::kayitDogrula('', 'https://www.numistr.org', '', $sv, $K) === 400
+        && PlgSystemNumistrconsent::kayitDogrula('{x', 'https://www.numistr.org', '', $sv, $K) === 400);
+    check('eski metin sürümü → 400', $dg(['v' => '2026-11-v1'] + $iyi) === 400 || $sv === '2026-11-v1');
+    check('kimlik 32 hex değil → 400', $dg(['i' => 'ABC'] + $iyi) === 400 && $dg(['i' => str_repeat('G', 32)] + $iyi) === 400);
+    check('zaman sayı değil / aralık dışı → 400', $dg(['t' => '1795173501757'] + $iyi) === 400 && $dg(['t' => 5] + $iyi) === 400);
+    check('bilinmeyen eylem → 400', $dg(['e' => 'kabul'] + $iyi) === 400);
+    check('katman / bayrak / dil dışı → 400', $dg(['k' => 3] + $iyi) === 400 && $dg(['a' => true] + $iyi) === 400 && $dg(['d' => 'de'] + $iyi) === 400);
+    check('tümünü kabul ama a=0 → 400', $dg(['a' => 0] + $iyi) === 400);
+    check('tümünü ret ama p=1 → 400', $dg(['e' => 'tumunu_ret', 'a' => 0, 'p' => 1] + $iyi) === 400);
+    $gc = $dg(['e' => 'geri_cekme', 'k' => 2, 'a' => 1, 'p' => 0, 's' => null] + $iyi);
+    check('geri çekme, yol yok → kayıt, sayfa null', is_array($gc) && $gc['eylem'] === 'geri_cekme' && $gc['katman'] === 2 && $gc['sayfa'] === null);
+    check('seçim kaydet a=0 p=1 → kayıt', is_array($dg(['e' => 'secim_kaydet', 'k' => 2, 'a' => 0, 'p' => 1] + $iyi)));
+    check('sayfaYolu: göreli / denetim karakteri / uzun', PlgSystemNumistrconsent::sayfaYolu('tr/') === null
+        && PlgSystemNumistrconsent::sayfaYolu("/a\nb") === null && mb_strlen(PlgSystemNumistrconsent::sayfaYolu('/' . str_repeat('ş', 300))) === 191);
+    $sahteDb = new class {
+        public function quoteName($n) { return '`' . $n . '`'; }
+        public function quote($v) { return "'" . str_replace("'", "''", $v) . "'"; }
+    };
+    $sq = PlgSystemNumistrconsent::eklemeSorgusu($sahteDb, $gc);
+    check('ekleme: INSERT IGNORE + sunucu zamanı UTC', strpos($sq, 'INSERT IGNORE INTO `numistr_cerez_rizalari`') === 0 && substr($sq, -19) === ', UTC_TIMESTAMP(3))');
+    check('ekleme: NULL ve sayılar tırnaksız, metin tırnaklı', strpos($sq, ", NULL, UTC_TIMESTAMP(3))") !== false && strpos($sq, "'geri_cekme', 2, 1, 0, 0, 'tr'") !== false);
+    $ok = PlgSystemNumistrconsent::isle($sayfa, $p + ['kayit' => '/index.php?option=com_ajax&plugin=numistrconsent&group=system&format=raw']);
+    preg_match('~id="ncz-veri">(.*?)</script>~s', $ok, $vm);
+    $vj = json_decode($vm[1] ?? '', true);
+    check('arayüz verisinde kayıt adresi (k) ve kimlik etiketi', ($vj['k'] ?? '') === '/index.php?option=com_ajax&plugin=numistrconsent&group=system&format=raw'
+        && ($vj['e']['kimlik'] ?? '') === 'Onay kimliğiniz');
+    preg_match('~id="ncz-veri">(.*?)</script>~s', PlgSystemNumistrconsent::isle($sayfa, $p), $vm2);
+    check('kayıt kapalı → k boş', (json_decode($vm2[1] ?? '', true)['k'] ?? 'x') === '');
+    check('tercih çerezi açıklamasında onay kimliği', (bool) array_filter($metin['cerezler'], function ($c) {
+        return $c['ad'] === 'numistr_cerez_tercihi' && strpos($c['amac_tr'], 'onay kimliğinizi') !== false && strpos($c['amac_en'], 'consent ID') !== false;
+    }));
+
     echo "dil\n";
     check('en-GB → en', PlgSystemNumistrconsent::dil('en-GB') === 'en');
     check('tr-TR → tr', PlgSystemNumistrconsent::dil('tr-TR') === 'tr');
