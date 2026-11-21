@@ -47,7 +47,7 @@ class PlgSystemNumistrconsent extends CMSPlugin
 
     protected $autoloadLanguage = true;
 
-    public const SURUM          = '1.1.0';
+    public const SURUM          = '1.1.1';
     public const GTM_VARSAYILAN = 'GTM-TRH8ZR6M';
     public const CEREZ          = 'numistr_cerez_tercihi';
     public const SURE_GUN       = 182;
@@ -122,7 +122,8 @@ class PlgSystemNumistrconsent extends CMSPlugin
             'kayit'       => (int) $this->params->get('kayit_acik', 1) === 1 ? rtrim(Uri::root(true), '/') . self::KAYIT_YOLU : '',
         ]);
 
-        if ($yeni !== $body) {
+        // 1.1.1: işlenmiş çıktı boş ya da metin değilse özgün gövde kalır (sayfa asla boş gitmez).
+        if (is_string($yeni) && $yeni !== '' && $yeni !== $body) {
             $this->app->setBody($yeni);
         }
     }
@@ -392,7 +393,7 @@ class PlgSystemNumistrconsent extends CMSPlugin
         // 2) <head>'in en başı: onay varsayılanı + kayıtlı tercih + (onay varsa) GTM.
         $ayar = ['c' => self::CEREZ, 'v' => $surum, 'g' => $gtm, 's' => $gun * 86400];
         $bas  = '<script>' . self::basBetigi(json_encode($ayar, $jsf)) . '</script>';
-        $html = preg_replace('~<head\b[^>]*>~i', '$0' . self::kacis($bas), $html, 1);
+        $html = self::guvenliDegistir('~<head\b[^>]*>~i', '$0' . self::kacis($bas), $html, 1);
 
         // 3) </head> önü: biçem + ertelenmiş arayüz betiği.
         $v    = rawurlencode(self::SURUM . '-' . $surum);
@@ -429,12 +430,51 @@ class PlgSystemNumistrconsent extends CMSPlugin
     /** Şablonun eklediği GTM parçalarını çıkarır. */
     public static function sablonGtmAyikla($html)
     {
-        $html = preg_replace('~<!--\s*Google Tag Manager\s*-->.*?<!--\s*End Google Tag Manager\s*-->~is', '', $html);
-        $html = preg_replace('~<!--\s*Google Tag Manager \(noscript\)\s*-->.*?<!--\s*End Google Tag Manager \(noscript\)\s*-->~is', '', $html);
-        $html = preg_replace('~<script\b[^>]*>(?:(?!</script>).)*googletagmanager\.com/gtm\.js(?:(?!</script>).)*</script>~is', '', $html);
-        $html = preg_replace('~<noscript>\s*<iframe[^>]*googletagmanager\.com/ns\.html.*?</noscript>~is', '', $html);
+        $html = self::guvenliDegistir('~<!--\s*Google Tag Manager\s*-->.*?<!--\s*End Google Tag Manager\s*-->~is', '', $html);
+        $html = self::guvenliDegistir('~<!--\s*Google Tag Manager \(noscript\)\s*-->.*?<!--\s*End Google Tag Manager \(noscript\)\s*-->~is', '', $html);
+        $html = self::gtmBetikleriniAyikla($html);
+        $html = self::guvenliDegistir('~<noscript>\s*<iframe[^>]*googletagmanager\.com/ns\.html.*?</noscript>~is', '', $html);
 
         return $html;
+    }
+
+    /**
+     * 1.1.1: içinde gtm.js geçen <script>…</script> bloklarını düzenli ifadesiz çıkarır.
+     * Eski desen (?:(?!</script>).)* ~50 KB'tan uzun satır içi betikte PCRE JIT yığınını taşırıp null döndürüyor,
+     * sayfa gövdesi boş gidiyordu (sikke sayfaları, 20–21 Kas 2026).
+     */
+    public static function gtmBetikleriniAyikla($html)
+    {
+        $cikti = '';
+        $konum = 0;
+
+        while (($bas = stripos($html, '<script', $konum)) !== false) {
+            $son = stripos($html, '</script>', $bas);
+
+            if ($son === false) {
+                break;
+            }
+
+            $son += strlen('</script>');
+            $blok = substr($html, $bas, $son - $bas);
+            $cikti .= substr($html, $konum, $bas - $konum);
+
+            if (stripos($blok, 'googletagmanager.com/gtm.js') === false) {
+                $cikti .= $blok;
+            }
+
+            $konum = $son;
+        }
+
+        return $cikti . substr($html, $konum);
+    }
+
+    /** preg_replace; hata (null) olursa girdiyi aynen döndürür — sayfa gövdesi hiçbir durumda boşalmaz. */
+    private static function guvenliDegistir($desen, $yerine, $html, $sinir = -1)
+    {
+        $sonuc = preg_replace($desen, $yerine, $html, $sinir);
+
+        return is_string($sonuc) ? $sonuc : $html;
     }
 
     /** <head> başına giden betik. $ayarJson: {c: çerez adı, v: metin sürümü, g: GTM kimliği, s: süre (sn)}. */

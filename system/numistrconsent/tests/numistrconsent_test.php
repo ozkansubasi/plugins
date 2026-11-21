@@ -122,6 +122,19 @@ namespace {
     check('yorumsuz satır içi GTM gider, öteki betik kalır', PlgSystemNumistrconsent::sablonGtmAyikla($yorumsuz) === '<head><script>var x=1;</script></head>');
     $ns = '<body><noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-X1" height="0" width="0"></iframe></noscript><p>a</p></body>';
     check('noscript iframe gider', PlgSystemNumistrconsent::sablonGtmAyikla($ns) === '<body><p>a</p></body>');
+    check('kapanmamış <script> olduğu gibi kalır', PlgSystemNumistrconsent::sablonGtmAyikla('<head><script>var a=1;') === '<head><script>var a=1;');
+    check('büyük harfli <SCRIPT> içindeki GTM de gider', PlgSystemNumistrconsent::sablonGtmAyikla('<SCRIPT>x="googletagmanager.com/gtm.js"</SCRIPT><p>b</p>') === '<p>b</p>');
+
+    echo "1.1.1 büyük satır içi betik (20–21 Kas: sikke sayfaları boş gidiyordu)\n";
+    $buyuk = '<script>var veri = "' . str_repeat('a', 1000000) . '";</script>';
+    $bs = str_replace('<main>İçerik</main>', '<main>İçerik</main>' . $buyuk, $sayfa);
+    $bo = PlgSystemNumistrconsent::isle($bs, $p);
+    check('1 MB betikli sayfa boş dönmez', is_string($bo) && strlen($bo) > strlen($bs) - strlen($gtmBlok));
+    check('1 MB betik aynen kalır', strpos($bo, $buyuk) !== false);
+    check('1 MB betikli sayfada şablon GTM yine gider', strpos($bo, '<!-- Google Tag Manager -->') === false && strpos($bo, "'GTM-TRH8ZR6M');</script>") === false);
+    check('1 MB betikli sayfaya onay katmanı eklenir', strpos($bo, PlgSystemNumistrconsent::ISARET) !== false);
+    $gb = '<head></head><body>' . $buyuk . '<script>j.src="https://www.googletagmanager.com/gtm.js?id=GTM-X1";</script>' . $buyuk . '</body>';
+    check('iki 1 MB betik arasındaki GTM betiği gider, ötekiler kalır', PlgSystemNumistrconsent::sablonGtmAyikla($gb) === '<head></head><body>' . $buyuk . $buyuk . '</body>');
 
     echo "rıza kaydı (ADR-013)\n";
     $K = ['https://www.numistr.org', 'https://numistr.org'];
