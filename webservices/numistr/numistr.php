@@ -117,6 +117,7 @@ $numistrAssistantFiles = [
     __DIR__ . '/helpers/Assistant/AssistantAbuse.php',
     __DIR__ . '/helpers/Assistant/AssistantTools.php',
     __DIR__ . '/helpers/Assistant/AssistantCoreKb.php',
+    __DIR__ . '/helpers/Assistant/AssistantGlossary.php',
     __DIR__ . '/controllers/AssistantController.php',
 ];
 $numistrAssistantReady = file_exists(__DIR__ . '/config/assistant.php');

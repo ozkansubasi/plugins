@@ -1152,7 +1152,7 @@ class AssistantController
             (array) (self::$config['landing_urls'][$lang] ?? []),
             self::siteUrlsIn($coreKb->build($lang)['text'] ?? '')
         );
-        $res['text'] = self::dropUnknownSiteLinks((string) $res['text'], $allowed);
+        $res['text'] = self::dropDanglingLead(self::dropUnknownSiteLinks((string) $res['text'], $allowed));
 
         return self::persistAndRespond($db, $convId, $identity, $lang, $res, $quota);
     }
@@ -1221,6 +1221,38 @@ class AssistantController
         return trim($answer);
     }
 
+    /**
+     * Drop a closing lead-in that points at nothing (1.27.0).
+     *
+     * "deka drahmi nedir" (2026-11-22) ended with "Daha fazla bilgi icin NumisTR
+     * terminoloji sayfasini ziyaret edebilirsiniz:" and nothing after the colon:
+     * the model had written a link, dropUnknownSiteLinks() removed it as unknown,
+     * and the sentence stayed behind. An answer that ENDS on a colon is broken
+     * whatever the cause, so its last sentence goes. A colon introducing a list
+     * further up is untouched; if the colon sentence is the whole answer, it stays.
+     */
+    public static function dropDanglingLead(string $answer): string
+    {
+        $t = rtrim($answer);
+
+        if ($t === '' || !preg_match('~:\s*$~u', $t)) {
+            return $answer;
+        }
+
+        // Start of the last sentence: just after the last line break, or after the
+        // last sentence end that is followed by whitespace.
+        $cut = 0;
+
+        if (preg_match_all('~\n|[.!?…](?=\s)~u', $t, $m, PREG_OFFSET_CAPTURE)) {
+            $last = end($m[0]);
+            $cut  = $last[1] + strlen($last[0]);
+        }
+
+        $kept = rtrim(substr($t, 0, $cut));
+
+        return $kept === '' ? $answer : $kept;
+    }
+
     /** Concrete numistr.org URLs written in a block of text (templates ignored). */
     public static function siteUrlsIn(string $text): array
     {
@@ -1258,16 +1290,21 @@ class AssistantController
      * Numbered context for the explain route, plus its sources.
      *
      * One numbered list across both stores, so a [n] citation is unambiguous. The
-     * numbers do NOT follow the source list: every terminology chunk collapses into
-     * a single glossary link (their content_url is the private Google Doc), so with
-     * two chunks the first article is [3] but the second link. Each source therefore
-     * carries the numbers that point at it ('refs'); clients print them next to the
-     * link instead of counting (2026-09-26: the app showed [1, 2] in the text and
-     * unnumbered links).
+     * numbers do NOT follow the source list: the chunks of one term collapse into a
+     * single source row (a term usually comes back as several chunks, plus its
+     * English copy), so the first article can be [4] but the second row. Each source
+     * therefore carries the numbers that point at it ('refs'); clients print them
+     * next to the row instead of counting (2026-09-26: the app showed [1, 2] in the
+     * text and unnumbered links).
      *
-     * @return array{lines: string[], sources: array<int, array{title: string, url: string, refs: int[]}>}
+     * Terminology rows (1.27.0): one per term, 'kind' => 'term', linked to the
+     * glossary only when the term is on that page, otherwise 'url' => ''. Until 1.26
+     * all chunks shared one glossary link - see NumisTRAssistantGlossary.
+     *
+     * @param array<string,array<string,string>>|null $glossaryTerms tests only
+     * @return array{lines: string[], sources: array<int, array{title: string, url: string, refs: int[], kind?: string}>}
      */
-    public static function explainContext(array $kbItems, array $siteItems, string $lang, string $glossaryUrl): array
+    public static function explainContext(array $kbItems, array $siteItems, string $lang, string $glossaryUrl, ?array $glossaryTerms = null): array
     {
         $lines   = [];
         $sources = [];
@@ -1281,12 +1318,8 @@ class AssistantController
             $lines[]  = '[' . $n . '] ' . $it['title'] . ' (' . $label . ")\n" . $it['text'];
         }
 
-        if ($kbRefs && $glossaryUrl !== '') {
-            $sources[] = [
-                'title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler',
-                'url'   => $glossaryUrl,
-                'refs'  => $kbRefs,
-            ];
+        foreach (NumisTRAssistantGlossary::termSources($kbItems, $kbRefs, $lang, $glossaryUrl, $glossaryTerms) as $row) {
+            $sources[] = $row;
         }
 
         foreach ($siteItems as $it) {
@@ -1322,9 +1355,13 @@ class AssistantController
         $exempt = array_flip($exemptUrls);
         $kept   = [];
 
-        foreach ($sources as $url => $src) {
-            if (isset($exempt[$url])) {
-                $kept[$url] = $src;
+        // Keyed by URL, except terminology rows (1.27.0): keyed 'term:<name>' and
+        // possibly without a URL, so the URL is read from the row itself.
+        foreach ($sources as $key => $src) {
+            $url = (string) ($src['url'] ?? $key);
+
+            if ($url !== '' && isset($exempt[$url])) {
+                $kept[$key] = $src;
                 continue;
             }
 
@@ -1334,8 +1371,8 @@ class AssistantController
 
             $title = (string) ($src['title'] ?? '');
 
-            if ($url !== '' && mb_strpos($answer, (string) $url) !== false) {
-                $kept[$url] = $src;
+            if ($url !== '' && mb_strpos($answer, $url) !== false) {
+                $kept[$key] = $src;
                 continue;
             }
 
@@ -1343,10 +1380,20 @@ class AssistantController
                 continue;
             }
 
-            $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($title, '/') . '(?![\p{L}\p{N}])/u';
+            // A term is named with Turkish suffixes and at sentence start
+            // ("dekadrahmiler", "Drahminin"): prefix match, any case. Short terms
+            // ("As", "Ay", "Ton") keep the word end, or "As" would match "Asya".
+            // Titles of places and articles keep the strict whole-word test
+            // ("Zara" must not match inside "Zarkanopolis").
+            if (($src['kind'] ?? '') === 'term') {
+                $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($title, '/')
+                    . (mb_strlen($title, 'UTF-8') <= 3 ? '(?![\p{L}\p{N}])' : '') . '/iu';
+            } else {
+                $pattern = '/(?<![\p{L}\p{N}])' . preg_quote($title, '/') . '(?![\p{L}\p{N}])/u';
+            }
 
             if (preg_match($pattern, $answer) === 1) {
-                $kept[$url] = $src;
+                $kept[$key] = $src;
             }
         }
 
@@ -1500,14 +1547,12 @@ class AssistantController
                 }
             }
 
-            // Terminology chunks carry no public url of their own (see searchKb),
-            // so attribute them to the glossary page once.
-            if ($name === 'search_kb' && !empty($items) && self::glossaryUrl($lang) !== '') {
-                $gUrl = self::glossaryUrl($lang);
-                $sources[$gUrl] = [
-                    'title' => $lang === 'en' ? 'Numismatic terms' : 'Numizmatik terimler',
-                    'url'   => $gUrl,
-                ];
+            // Terminology chunks carry no public url of their own (see searchKb):
+            // one row per term, linked to the glossary only where the term is on
+            // that page (1.27.0, NumisTRAssistantGlossary). Kept only if the answer
+            // names the term - see sourcesSupportedByAnswer().
+            if ($name === 'search_kb' && !empty($items)) {
+                $sources += NumisTRAssistantGlossary::termSources($items, [], $lang, self::glossaryUrl($lang));
             }
 
             return $result;

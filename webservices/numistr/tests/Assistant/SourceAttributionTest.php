@@ -16,6 +16,7 @@ require_once $root . '/helpers/Assistant/LLMClient.php';
 require_once $root . '/helpers/Assistant/AssistantQuota.php';
 require_once $root . '/helpers/Assistant/AssistantAbuse.php';
 require_once $root . '/helpers/Assistant/AssistantCoreKb.php';
+require_once $root . '/helpers/Assistant/AssistantGlossary.php';
 require_once $root . '/controllers/AssistantController.php';
 
 $C = 'AssistantController';
