@@ -87,9 +87,13 @@ check('no refs given -> rows carry no refs key', !isset(array_values($rows)[1]['
 // Real generated list: every value must be a non-empty page entry.
 $real = $G::pageTerms('tr');
 check('generated glossary list loads (tr)', count($real) > 50 && !in_array('', $real, true));
-check('generated list: Drahmi is on the page, Dekadrahmi is not', isset($real['drahmi']) && !isset($real['dekadrahmi']));
+// Since 2026-11-22 both glossary pages carry all 100 KB terms (TR short list +73,
+// EN "Short Definitions" 111); KB titles spelled differently are aliased.
+check('generated list: Drahmi and Dekadrahmi are on the page', isset($real['drahmi']) && isset($real['dekadrahmi']));
 check('generated list: section headers are not terms', !isset($real['temel tanım']) && !isset($real['detaylı açıklama']));
-check('generated list: en page has no terms', $G::pageTerms('en') === []);
+check('generated list: KB spelling aliases (Tunç -> Pirinç, Kesim -> Flan)', ($real['tunç'] ?? '') === 'Pirinç (Brass)' && str_starts_with($real['kesim'] ?? '', 'Flan'));
+$realEn = $G::pageTerms('en');
+check('generated list: en page carries terms', isset($realEn['decadrachm']) && isset($realEn['authority']) && isset($realEn['otorite']));
 
 // ---- tool routes: a term row survives only if the answer names the term ----
 $tr = $G::termSources([['title' => 'Dekadrahmi'], ['title' => 'Drahmi'], ['title' => 'Hekte']], [], 'tr', $glossary, $terms);
