@@ -105,6 +105,16 @@ final class NumisTRBlogAdmin
             }
             $tagIds[$t] = $t;
         }
+        // 1.28.1: planlı yayın tarihi (YYYY-MM-DD). Yalnız state 0 yazıda; makalenin `note` alanına `planli:<tarih>`
+        // yazılır, sunucudaki sabah görevi (scripts/sunucu/planli_yayin.php) o gün yayına alır. Yazı o güne dek yayımsız
+        // kalır; hiçbir liste, arama ya da uygulama ucu onu göremez.
+        $planli = $in['planli'] ?? null;
+        if ($planli !== null) {
+            if (!is_string($planli) || !preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $planli, $pm)
+                || !checkdate((int) $pm[2], (int) $pm[3], (int) $pm[1]) || $state !== 0) {
+                return [null, 'planli YYYY-MM-DD olmali ve yalniz state 0 yazida kullanilir'];
+            }
+        }
         // 1.24.0: EN yazının TR eşi (o_associations). Yalnız en-GB yazıda; TR'nin kendisi doğrulanır (esDogrula).
         $esId = $in['es_id'] ?? null;
         if ($esId !== null && (!is_int($esId) || $esId <= 0 || $language !== 'en-GB')) {
@@ -114,6 +124,7 @@ final class NumisTRBlogAdmin
         return [[
             'es_id' => $esId, 'title' => $title, 'alias' => $alias, 'catid' => $catid, 'state' => $state, 'language' => $language,
             'introtext' => $intro, 'fulltext' => $full, 'metadesc' => $metadesc, 'tags' => array_values($tagIds),
+            'planli' => $planli,
         ], null];
     }
 
@@ -261,6 +272,9 @@ final class NumisTRBlogAdmin
             $veri += ['created_by' => $createdBy, 'metakey' => '',
                       'images' => self::girisGorseli($d['introtext'], $d['fulltext'], $d['title']), 'urls' => '{}',
                       'attribs' => '{}', 'metadata' => '{}', 'featured' => 0];
+        }
+        if (!empty($d['planli'])) {
+            $veri['note'] = 'planli:' . $d['planli'];
         }
         if ($mevcutId === 0 && $d['state'] === 1) {
             // blog listesi yayın tarihine göre sıralanır; güncellemede ilk yayın tarihi korunur

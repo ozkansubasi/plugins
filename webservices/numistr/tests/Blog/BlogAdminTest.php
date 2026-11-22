@@ -77,3 +77,16 @@ check('figür girişteyse de bulunur', strpos(NumisTRBlogAdmin::girisGorseli('{n
 check('figür yoksa {}', NumisTRBlogAdmin::girisGorseli('<p>a</p>', '<p>b</p>', 't') === '{}');
 check('gorsel parametresi yoksa {}', NumisTRBlogAdmin::girisGorseli('{numistr_gorsel variant=5}', '', 't') === '{}');
 check('json geçerli, eğik çizgi kaçışsız', json_decode(NumisTRBlogAdmin::girisGorseli('{numistr_gorsel gorsel=1}', '', 'a"b'), true)['image_intro_alt'] === 'a"b');
+
+// ------------------------------------------------------------------ 1.28.1 planlı yayın ---
+[$pl, $plH] = NumisTRBlogAdmin::normalize(array_merge($ok, ['state' => 0, 'planli' => '2026-11-23']), $izinli);
+check('planli: state 0 + geçerli tarih kabul', $plH === null && $pl['planli'] === '2026-11-23');
+[, $plY] = NumisTRBlogAdmin::normalize(array_merge($ok, ['state' => 1, 'planli' => '2026-11-23']), $izinli);
+check('planli: yayımlı (state 1) yazıda reddedilir', $plY !== null);
+[, $plB] = NumisTRBlogAdmin::normalize(array_merge($ok, ['state' => 0, 'planli' => '23.11.2026']), $izinli);
+check('planli: biçim YYYY-MM-DD değilse reddedilir', $plB !== null);
+[, $plT] = NumisTRBlogAdmin::normalize(array_merge($ok, ['state' => 0, 'planli' => '2026-02-30']), $izinli);
+check('planli: olmayan gün reddedilir', $plT !== null);
+[$plN] = NumisTRBlogAdmin::normalize(array_merge($ok, ['state' => 0]), $izinli);
+check('planli verilmezse null (eski davranış)', $plN['planli'] === null);
+
