@@ -82,6 +82,14 @@ return [
 
     // ================= Hesap silme (1.20.0, POST /v1/user/delete) =================
     // App Store 5.1.1(v). Silme hemen yapilir; akis AccountDeletionHelper'da.
+    // 1.28.0: uygulama → site tek kullanımlık geçiş kodu (WebHandoffHelper, plg_system_numistrauth task=handoff)
+    'WEB_HANDOFF' => [
+        'site_root'     => 'https://www.numistr.org',
+        'ttl'           => 120,  // sn
+        'per_hour'      => 10,   // kullanıcı başına kod
+        'ip_per_minute' => 20,
+    ],
+
     'ACCOUNT_DELETION' => [
         'per_hour'      => 3,   // kisi basina (sha256(sub)), saatlik pencere; Auth0'ya giden her deneme sayilir
         'ip_per_minute' => 10,  // kaba IP siniri (CGNAT payi)

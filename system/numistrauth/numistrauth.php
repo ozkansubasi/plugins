@@ -56,6 +56,8 @@ class PlgSystemNumistrauth extends CMSPlugin
                 return $this->startAuth($task === 'signup');
             case 'callback':
                 return $this->handleCallback();
+            case 'handoff':
+                return $this->handleHandoff();
             case 'logout':
                 return $this->handleLogout();
             case 'password':
@@ -232,8 +234,25 @@ class PlgSystemNumistrauth extends CMSPlugin
             return $this->failRedirect($lang, 'PLG_SYSTEM_NUMISTRAUTH_ERR_BLOCKED');
         }
 
-        // One-time nonce consumed by plg_authentication_numistrauth
-        $nonce = bin2hex(random_bytes(24));
+        if ($this->loginUser($user) !== true) {
+            $this->log('joomla-login-failed', 'app->login returned false for user ' . $user->id);
+
+            return $this->failRedirect($lang, 'PLG_SYSTEM_NUMISTRAUTH_ERR_LOGIN');
+        }
+
+        $this->app->redirect($return !== '' ? $return : $this->defaultReturn($lang));
+
+        return null;
+    }
+
+    /**
+     * Doğrulanmış kullanıcı için Joomla oturumunu açar: tek kullanımlık nonce oturuma yazılır,
+     * plg_authentication_numistrauth onu tüketir (callback ve handoff ortak yolu).
+     */
+    private function loginUser($user): bool
+    {
+        $session = $this->app->getSession();
+        $nonce   = bin2hex(random_bytes(24));
         $session->set(self::SESSION_NS . '.sso_nonce', $nonce);
         $session->set(self::SESSION_NS . '.sso_user', (int) $user->id);
         $session->set(self::SESSION_NS . '.sso_time', time());
@@ -247,13 +266,113 @@ class PlgSystemNumistrauth extends CMSPlugin
         $session->clear(self::SESSION_NS . '.sso_user');
         $session->clear(self::SESSION_NS . '.sso_time');
 
-        if ($ok !== true) {
-            $this->log('joomla-login-failed', 'app->login returned false for user ' . $user->id);
+        return $ok === true;
+    }
 
-            return $this->failRedirect($lang, 'PLG_SYSTEM_NUMISTRAUTH_ERR_LOGIN');
+    // ------------------------------------------------------------------
+    // 2b) Uygulamadan siteye geçiş (1.3.0, 22 Kas 2026)
+    // ------------------------------------------------------------------
+
+    /**
+     * task=handoff&code=<64 hex> — uygulama, API'nin `POST /v1/user/web-handoff` ucundan aldığı tek kullanımlık
+     * kodla siteyi açar (uygulama Auth0'a geçici oturumla girdiği için tarayıcıda oturum yoktur).
+     *
+     * Kod `numistr_web_handoff` tablosunda yalnız sha256 özetiyle durur; ömrü 120 sn; koşullu UPDATE ile bir kez
+     * tüketilir. Başka bir kullanıcı girişliyse kod TÜKETİLMEDEN çıkış yapılır ve aynı adrese dönülür (ikinci istek
+     * temiz oturumla girer). Geçersiz/süresi dolmuş kodda misafir olarak Hesabım'a gidilir, normal giriş görünür.
+     */
+    private function handleHandoff()
+    {
+        // Dil süzgeci adresi /tr/'ye yönlendirdiği için site dili güvenilmez; uygulama &lang= gönderir.
+        $p    = (string) $this->app->input->getCmd('lang', '');
+        $lang = $p === 'en' || $p === 'tr' ? $p : $this->lang();
+        $code = strtolower(trim((string) $this->app->input->getString('code', '')));
+
+        if (!preg_match('/^[0-9a-f]{64}$/', $code)) {
+            return $this->handoffFail($lang, 'bad-format');
         }
 
-        $this->app->redirect($return !== '' ? $return : $this->defaultReturn($lang));
+        $current = $this->app->getIdentity();
+        $db      = Factory::getDbo();
+        $table   = $db->quoteName('numistr_web_handoff');
+        $now     = gmdate('Y-m-d H:i:s');
+
+        try {
+            $db->setQuery('SELECT id, user_id, return_path FROM ' . $table
+                . ' WHERE code_hash = ' . $db->quote(hash('sha256', $code))
+                . ' AND used_at IS NULL AND expires_at >= ' . $db->quote($now));
+            $row = $db->loadAssoc();
+        } catch (\Throwable $e) {
+            $this->log('handoff-db', $e->getMessage());
+
+            return $this->handoffFail($lang, 'db');
+        }
+
+        if (!$row) {
+            return $this->handoffFail($lang, 'not-found-or-expired');
+        }
+
+        $userId = (int) $row['user_id'];
+
+        // Başka biri girişli: kodu harcamadan çıkış yap, aynı adrese dön (oturum yok edilir; ikinci istek temiz başlar).
+        if ($current && (int) $current->id > 0 && (int) $current->id !== $userId) {
+            $this->log('handoff-switch', 'user ' . (int) $current->id . ' -> ' . $userId);
+            $this->app->logout((int) $current->id);
+            $this->app->redirect($this->canonicalRoot() . 'index.php?option=com_ajax&plugin=numistrauth&format=raw&task=handoff&code=' . $code . '&lang=' . $lang);
+
+            return null;
+        }
+
+        try {
+            $db->setQuery('UPDATE ' . $table . ' SET used_at = ' . $db->quote($now)
+                . ' WHERE id = ' . (int) $row['id'] . ' AND used_at IS NULL')->execute();
+
+            if ((int) $db->getAffectedRows() !== 1) {
+                return $this->handoffFail($lang, 'already-used');
+            }
+        } catch (\Throwable $e) {
+            $this->log('handoff-db', $e->getMessage());
+
+            return $this->handoffFail($lang, 'db');
+        }
+
+        $return = $this->safeReturn((string) $row['return_path'], $lang);
+        $return = $return !== '' ? $return : $this->handoffTarget($lang);
+
+        if ($current && (int) $current->id === $userId) {
+            $this->app->redirect($return);
+
+            return null;
+        }
+
+        $user = Factory::getUser($userId);
+
+        if ($user->id <= 0 || (int) $user->block === 1) {
+            return $this->handoffFail($lang, 'blocked');
+        }
+
+        if (!$this->loginUser($user)) {
+            $this->log('handoff-login-failed', 'app->login returned false for user ' . $user->id);
+
+            return $this->handoffFail($lang, 'login');
+        }
+
+        $this->log('handoff', 'user ' . $user->id);
+        $this->app->redirect($return);
+
+        return null;
+    }
+
+    private function handoffTarget(string $lang): string
+    {
+        return $this->canonicalRoot() . ($lang === 'en' ? 'en/my-account' : 'tr/hesabim');
+    }
+
+    private function handoffFail(string $lang, string $reason)
+    {
+        $this->log('handoff-failed', $reason);
+        $this->app->enqueueMessage(Factory::getLanguage()->_('PLG_SYSTEM_NUMISTRAUTH_ERR_HANDOFF'), 'warning');
+        $this->app->redirect($this->handoffTarget($lang));
 
         return null;
     }

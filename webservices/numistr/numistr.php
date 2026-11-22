@@ -53,6 +53,9 @@ if (file_exists(__DIR__ . '/helpers/VerificationResendHelper.php')) {
     require_once __DIR__ . '/helpers/VerificationResendHelper.php';
 }
 // Hesap silme (1.20.0) — Auth0ManagementClient olmadan yüklenmez (kısmi deploy /v1'i düşürmesin).
+if (file_exists(__DIR__ . '/helpers/WebHandoffHelper.php')) {
+    require_once __DIR__ . '/helpers/WebHandoffHelper.php';
+}
 if (class_exists('Auth0ManagementClient') && file_exists(__DIR__ . '/helpers/AccountDeletionHelper.php')) {
     require_once __DIR__ . '/helpers/AccountDeletionHelper.php';
 }
@@ -491,6 +494,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         // ===================== USER SUBSCRIPTION: /v1/user/subscription ====
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/subscription(?:[/?#;]|$)~', $uri)) {
             $this->handleUserSubscription($uri);
+            return;
+        }
+
+        // ===================== WEB HANDOFF: POST /v1/user/web-handoff (1.28.0) ==
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/user/web-handoff(?:[/?#;]|$)~', $uri)) {
+            $this->handleWebHandoff($uri);
             return;
         }
 
@@ -2787,6 +2796,61 @@ class PlgWebservicesNumistr extends CMSPlugin
             $titles[$res['status']] ?? 'Error',
             null,
             ['error_code' => $res['code'], 'retry_after' => $res['retry_after']]
+        );
+    }
+
+    /**
+     * POST /v1/user/web-handoff — 1.28.0: uygulamada girişli kullanıcıyı sitede de girişli açmak için tek kullanımlık
+     * geçiş adresi. Gövde (isteğe bağlı) `{"return": "/tr/hesabim", "lang": "tr"}`. Kimlik: requireAuth() (Bearer).
+     *
+     * Yanıtlar: 200 {data:{url, expires_in}} (no-store) · 405 METHOD_NOT_ALLOWED · 401 · 429 RATE_LIMITED (+retry_after) ·
+     * 503 HANDOFF_UNAVAILABLE (yardımcı ya da tablo yok; uygulama düz adrese düşer). Akış ve güvenlik: WebHandoffHelper.
+     */
+    private function handleWebHandoff(string $uri): void
+    {
+        $this->dbg('user-web-handoff', $uri);
+
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
+            $this->responseHelper->sendError(405, 'Method Not Allowed', 'Only POST method is allowed', ['error_code' => 'METHOD_NOT_ALLOWED']);
+            return;
+        }
+
+        if (!class_exists('WebHandoffHelper')) {
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Web handoff not installed', ['error_code' => 'HANDOFF_UNAVAILABLE']);
+            return;
+        }
+
+        $settings = WebHandoffHelper::settings($this->config);
+        $this->checkRateLimit('user-web-handoff', $settings['ip_per_minute'], 'RATE_LIMITED');
+
+        $user = $this->requireAuth();
+        $body = WebHandoffHelper::parseBody((string) file_get_contents('php://input'));
+
+        try {
+            $res = WebHandoffHelper::issue(
+                Factory::getDbo(),
+                $settings,
+                (int) $user->id,
+                WebHandoffHelper::safeReturn($body['return'], $body['lang']),
+                time(),
+                WebHandoffHelper::lang($body['lang'])
+            );
+        } catch (\Throwable $e) {
+            $this->dbg('user-web-handoff-failed', $e->getMessage());
+            $this->responseHelper->sendError(503, 'Service Unavailable', 'Web handoff unavailable', ['error_code' => 'HANDOFF_UNAVAILABLE']);
+            return;
+        }
+
+        if ($res['status'] === 200) {
+            $this->responseHelper->sendJson(['data' => $res['body']], true);
+            return;
+        }
+
+        $this->responseHelper->sendError(
+            $res['status'],
+            $res['status'] === 429 ? 'Too Many Requests' : 'Unauthorized',
+            null,
+            ['error_code' => $res['code'], 'retry_after' => $res['retry_after'] ?? null]
         );
     }
 
