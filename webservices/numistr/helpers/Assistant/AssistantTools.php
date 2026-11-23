@@ -101,7 +101,7 @@ class NumisTRAssistantTools
         $defs = [
             [
                 'name'        => 'search_coins',
-                'description' => 'Search ancient Anatolian coin variants in the NumisTR database by region, metal, date range, mint, authority or free text. Returns up to 10 example variants with page URLs. Never reveals total counts.',
+                'description' => 'Search ancient Anatolian coin variants in the NumisTR database by region, metal, date range, mint, authority, free text or a design element (motif) on the obverse/reverse. Returns up to 10 example variants with page URLs (motif searches also return the matching descriptions). Never reveals total counts.',
                 'input_schema' => [
                     'type'       => 'object',
                     'properties' => [
@@ -112,6 +112,7 @@ class NumisTRAssistantTools
                         'mint'      => ['type' => 'string', 'description' => 'Mint (ancient city) name in English/Latin catalogue spelling, never the Turkish form (e.g. halicarnassus not Halikarnassos, rhodes not Rhodos, ephesus, sardes, cnidus)'],
                         'authority' => ['type' => 'string', 'description' => 'Issuing authority / ruler (e.g. croesus, hadrian)'],
                         'q'         => ['type' => 'string', 'description' => 'Free text matched against title, mint and authority (English/Latin spelling)'],
+                        'motif'     => ['type' => 'string', 'description' => 'Design element on the obverse or reverse (iconography), e.g. owl, lion head, pomegranate, Athena, Herakles, ear of grain. Matched at word start in both the Turkish and English catalogue descriptions; give the term in the user language and English, comma-separated (e.g. "baykuş, owl"). Use for questions like "coins with an owl".'],
                         'limit'     => $limitProp,
                     ],
                     'additionalProperties' => false,
@@ -737,6 +738,21 @@ class NumisTRAssistantTools
                 . ' OR LOWER(' . $authCol . ') LIKE ' . $like . ')');
         }
 
+        // Motif (ön/arka yüz betimi), 1.29.0: eskiden serbest metin yalnız başlık / darphane / hükümdara
+        // bakıyordu; "baykuşlu sikkeler" gibi sorular katalogdan yanıtlanamıyordu. TR ve EN betimlerde
+        // sözcük başı eşleşme (NumisTRMotifSearch ile aynı kural: "arı" ↛ "noktaların").
+        $motifTerms = self::motifTerms((string) ($in['motif'] ?? ''));
+
+        if ($motifTerms) {
+            $motifIdList = $this->motifIds($db, $motifTerms);
+
+            if (!$motifIdList) {
+                return ['items' => [], 'has_more' => false, 'motif_terms' => $motifTerms];
+            }
+
+            $q->where($db->quoteName('v.article_id') . ' IN (' . implode(',', array_map('intval', $motifIdList)) . ')');
+        }
+
         $q->order($db->quoteName('v.article_id') . ' ASC')->setLimit($limit + 1);
         $rows = [];
 
@@ -765,7 +781,115 @@ class NumisTRAssistantTools
             $items[] = $this->variantRow($r, $lang, $base);
         }
 
+        if ($motifTerms && $items) {
+            $items = $this->attachDescriptions($db, $items, $lang);
+
+            return ['items' => $items, 'has_more' => $hasMore, 'motif_terms' => $motifTerms];
+        }
+
         return ['items' => $items, 'has_more' => $hasMore];
+    }
+
+    /** Ön/arka yüz betim alanları: [obv, rev] dile göre (TR betimi boşsa EN'e düşer). */
+    private function descFieldIds(string $lang): array
+    {
+        $fid = fn (string $k, int $d) => (int) ($this->dbHelper()->fid($k) ?? $d);
+        $en  = [$fid('obverse_desc', 30), $fid('reverse_desc', 31)];
+        $tr  = [$fid('obverse_desc_tr', 32), $fid('reverse_desc_tr', 33)];
+
+        return $lang === 'en' ? ['primary' => $en, 'fallback' => $tr] : ['primary' => $tr, 'fallback' => $en];
+    }
+
+    /**
+     * "baykuş, owl" → ['baykuş', 'owl']. Virgül, noktalı virgül ve dikey çizgi ayırır; Türkçe küçük harf,
+     * en az 2 harf, en çok 8 terim (NumisTRMotifSearch::parseTerms).
+     */
+    public static function motifTerms(string $motif): array
+    {
+        if (!class_exists('NumisTRMotifSearch')) {
+            return [];
+        }
+
+        return NumisTRMotifSearch::parseTerms(str_replace([';', '|'], ',', $motif));
+    }
+
+    /**
+     * Betim satırlarından (id, val) terimle SÖZCÜK BAŞINDA eşleşen makale kimlikleri, en çok $cap tane.
+     * Veritabanından bağımsız (test edilir). SQL LIKE yalnız ön süzmedir; kesin karar burada.
+     *
+     * @param  array<int, array{id: mixed, val: mixed}>  $rows
+     * @return int[]
+     */
+    public static function motifMatchIds(array $rows, array $terms, int $cap = 2000): array
+    {
+        $ids = [];
+
+        foreach ($rows as $r) {
+            if (NumisTRMotifSearch::matches((string) ($r['val'] ?? ''), $terms)) {
+                $ids[(int) $r['id']] = true;
+
+                if (count($ids) >= $cap) {
+                    break;
+                }
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /** TR ve EN ön/arka yüz betimlerinde motif geçen makale kimlikleri. */
+    private function motifIds($db, array $terms): array
+    {
+        $fields = array_unique(array_merge(...array_values($this->descFieldIds('tr'))));
+        $fv     = $db->quoteName($this->dbHelper()->resolveFieldsValuesTable($db));
+        $likes  = [];
+
+        foreach ($terms as $t) {
+            $likes[] = 'LOWER(v.value) LIKE ' . $db->quote('%' . $db->escape($t, true) . '%', false);
+        }
+
+        $db->setQuery(
+            'SELECT v.item_id AS id, v.value AS val FROM ' . $fv . ' v'
+            . ' WHERE v.field_id IN (' . implode(',', array_map('intval', $fields)) . ')'
+            . ' AND (' . implode(' OR ', $likes) . ')'
+            . ' LIMIT ' . NumisTRMotifSearch::MAX_CANDIDATES
+        );
+
+        return self::motifMatchIds($db->loadAssocList() ?: [], $terms);
+    }
+
+    /** Motif sonuçlarına ön/arka yüz betimini ekler (modelin eşleşmeyi görüp alıntılayabilmesi için). */
+    private function attachDescriptions($db, array $items, string $lang): array
+    {
+        $f   = $this->descFieldIds($lang);
+        $all = array_merge($f['primary'], $f['fallback']);
+        $ids = array_map(fn ($i) => $db->quote((string) $i['article_id']), $items);
+        $fv  = $db->quoteName($this->dbHelper()->resolveFieldsValuesTable($db));
+
+        $db->setQuery(
+            'SELECT v.item_id AS id, v.field_id AS f, v.value AS val FROM ' . $fv . ' v'
+            . ' WHERE v.field_id IN (' . implode(',', array_map('intval', $all)) . ')'
+            . ' AND v.item_id IN (' . implode(',', $ids) . ')'
+        );
+        $by = [];
+
+        foreach ($db->loadAssocList() ?: [] as $r) {
+            $by[(int) $r['id']][(int) $r['f']] = (string) $r['val'];
+        }
+
+        foreach ($items as &$it) {
+            $d = $by[(int) $it['article_id']] ?? [];
+            $pick = function (int $i) use ($d, $f) {
+                $v = trim($d[$f['primary'][$i]] ?? '');
+
+                return $v !== '' ? $v : trim($d[$f['fallback'][$i]] ?? '');
+            };
+            $it['obverse'] = self::htmlToText($pick(0), 200);
+            $it['reverse'] = self::htmlToText($pick(1), 200);
+        }
+        unset($it);
+
+        return $items;
     }
 
     /**

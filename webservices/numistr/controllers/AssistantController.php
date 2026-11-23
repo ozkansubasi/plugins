@@ -126,13 +126,13 @@ class AssistantController
                 'gemini' => ['ok' => (bool) $g['ok'], 'model' => $model, 'error' => mb_substr((string) ($g['error'] ?? ''), 0, 300)],
             ];
 
-            // optional DB tool probe: &tool=search_coins|search_settlements&mint=..&region=..&q=..&metal=..
+            // optional DB tool probe: &tool=search_coins|search_settlements&mint=..&region=..&q=..&metal=..&motif=..
             $toolName = (string) ($_GET['tool'] ?? '');
 
             if (in_array($toolName, ['search_coins', 'search_settlements'], true)) {
                 $params = [];
 
-                foreach (['mint', 'region', 'q', 'metal', 'authority'] as $k) {
+                foreach (['mint', 'region', 'q', 'metal', 'authority', 'motif'] as $k) {
                     if (isset($_GET[$k]) && $_GET[$k] !== '') {
                         $params[$k] = mb_substr((string) $_GET[$k], 0, 60);
                     }
