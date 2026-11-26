@@ -110,6 +110,11 @@ if (file_exists(__DIR__ . '/helpers/SiteSearchHelper.php')) {
     require_once __DIR__ . '/helpers/SiteSearchHelper.php';
 }
 
+// ---- Sayfa videolari (1.30.0) - optional: yoksa yazi / yerlesim ucu videosuz doner ----
+if (file_exists(__DIR__ . '/helpers/VideoHelper.php')) {
+    require_once __DIR__ . '/helpers/VideoHelper.php';
+}
+
 // ---- AI Assistant (ADR-003, Phase 1) - optional, all-or-nothing ----
 // The controller is only loaded when every helper it depends on is present,
 // so a partial upload can never take the rest of /v1 down (2026-07-08 lesson).
@@ -937,6 +942,11 @@ class PlgWebservicesNumistr extends CMSPlugin
                 $this->responseHelper->sendError(404, 'Resource not found');
                 return;
             }
+
+            // 1.30.0: yerleşimin site makalesine bağlı YouTube videoları (il kancalı kısa videoların çoğu yerleşim sayfasına bağlı)
+            $detail['videos'] = class_exists('NumisTRVideos') && !empty($detail['article_id'])
+                ? NumisTRVideos::forArticle((int)$detail['article_id'], $lang, rtrim(Uri::root(), '/'))
+                : [];
 
             $this->responseHelper->sendJson(['data' => $detail]);
 
@@ -3394,6 +3404,10 @@ class PlgWebservicesNumistr extends CMSPlugin
                     'category_id' => (int)$article['catid'],
                     'created' => $article['created'],
                     'modified' => $article['modified'],
+                    // 1.30.0: YouTube videoları (uygulamada küçük resim kartı → YouTube). Tablo / yardımcı yoksa boş dizi.
+                    'videos' => class_exists('NumisTRVideos')
+                        ? NumisTRVideos::forArticle((int)$article['id'], str_starts_with((string)($article['language'] ?? ''), 'en') ? 'en' : 'tr', rtrim(Uri::root(), '/'))
+                        : [],
                 ]
             ];
 

@@ -212,6 +212,8 @@ class NumisTRLocationsHelper
             'has_coins'   => (bool)(int)($r['has_coins'] ?? 0),
             'coin_count'  => (int)($r['coin_count'] ?? 0),
             'lang'        => $lang,
+            // 1.30.0: sitedeki yerleşim makalesi (dil sürümü; 2026-09-08 backfill). Videolar bu kimliğe bağlı.
+            'article_id'  => ((int)($r[$lang === 'en' ? 'article_id_en' : 'article_id_tr'] ?? 0)) ?: null,
         ];
     }
 
