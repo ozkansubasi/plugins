@@ -115,6 +115,11 @@ if (file_exists(__DIR__ . '/helpers/VideoHelper.php')) {
     require_once __DIR__ . '/helpers/VideoHelper.php';
 }
 
+// ---- Ilgili yazilar + gunun hikayesinin sikkesi (1.31.0) - optional: yoksa uclar bos liste / coin null ----
+if (file_exists(__DIR__ . '/helpers/RelatedArticlesHelper.php')) {
+    require_once __DIR__ . '/helpers/RelatedArticlesHelper.php';
+}
+
 // ---- AI Assistant (ADR-003, Phase 1) - optional, all-or-nothing ----
 // The controller is only loaded when every helper it depends on is present,
 // so a partial upload can never take the rest of /v1 down (2026-07-08 lesson).
@@ -526,6 +531,12 @@ class PlgWebservicesNumistr extends CMSPlugin
             return;
         }
 
+        // ===================== LOCATION ARTICLES: /v1/locations/{loc_id}/articles (1.31.0) =====
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/locations/([^/?#;]+)/articles(?:[/?#;]|$)~', $uri, $m)) {
+            $this->handleLocationArticles($uri, $m[1]);
+            return;
+        }
+
         // ===================== LOCATION DETAIL: /v1/locations/{loc_id} =====
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/locations/([^/?#;]+)(?:[/?#;]|$)~', $uri, $m)) {
             $this->handleLocationDetail($uri, $m[1]);
@@ -633,6 +644,12 @@ class PlgWebservicesNumistr extends CMSPlugin
         // Article list (paginated, optional category filter)
         if (preg_match('~(?:/api)?(?:/index\.php)?/v1/articles(?:[?#;]|$)~', $uri)) {
             $this->handleArticlesList($uri);
+            return;
+        }
+
+        // ===================== RELATED ARTICLES: /v1/variants/{id}/articles (1.31.0) ============
+        if (preg_match('~(?:/api)?(?:/index\.php)?/v1/variants/(\d+)/articles(?:[/?#;]|$)~', $uri, $m)) {
+            $this->handleVariantArticles($uri, (int)$m[1]);
             return;
         }
 
@@ -953,6 +970,49 @@ class PlgWebservicesNumistr extends CMSPlugin
         } catch (\Throwable $e) {
             $this->dbg('location-detail-error', $e->getMessage());
             $this->responseHelper->sendError(500, 'Internal server error', !empty($this->config['DEBUG_MODE']) ? $e->getMessage() : 'Unable to fetch location');
+        }
+    }
+
+    /**
+     * GET /v1/locations/{loc_id}/articles?lang=tr|en&limit=3  (1.31.0, uygulama harita bilgi ekranı)
+     * Yerleşimin hikâyeleri: yerleşimin darphanelerine (eşleme tablosu) yer etiketiyle bağlı blog yazıları
+     * (sitedeki "Kentten söz eden yazılar" ile aynı bağ; sıra mod_numistr_ilgili 1.4.1). Bağ yoksa boş dizi.
+     */
+    private function handleLocationArticles(string $uri, string $locId): void
+    {
+        $this->dbg('locations-articles', $uri);
+
+        $this->checkRateLimit('locations', $this->config['RATE_LIMITS']['default'] ?? 60);
+
+        try {
+            $app   = Factory::getApplication();
+            $lang  = ($app->input->getString('lang', 'tr') === 'en') ? 'en' : 'tr';
+            $locId = strtoupper(trim($locId));
+
+            if (!preg_match('/^LOC-\d{1,6}$/', $locId)) {
+                $this->responseHelper->sendError(400, 'Bad Request', 'Invalid location id (expected LOC-NNNN)');
+                return;
+            }
+
+            $db = Factory::getDbo();
+            $tr = $db->setQuery($db->getQuery(true)
+                ->select($db->quoteName('article_id_tr'))
+                ->from($db->quoteName('locations'))
+                ->where($db->quoteName('loc_id') . ' = ' . $db->quote($locId)))->loadResult();
+
+            if ($tr === null) {
+                $this->responseHelper->sendError(404, 'Resource not found');
+                return;
+            }
+
+            $items = class_exists('NumisTRRelatedArticles')
+                ? NumisTRRelatedArticles::forLocation((int)$tr, $lang, NumisTRRelatedArticles::sinir($app->input->getInt('limit', 3)))
+                : [];
+
+            $this->responseHelper->sendJson(['data' => $items]);
+        } catch (\Throwable $e) {
+            $this->dbg('location-articles-error', $e->getMessage());
+            $this->responseHelper->sendError(500, 'Internal server error', !empty($this->config['DEBUG_MODE']) ? $e->getMessage() : 'Unable to fetch articles');
         }
     }
 
@@ -1692,6 +1752,29 @@ class PlgWebservicesNumistr extends CMSPlugin
     /**
      * GET /v1/variants/{id}/images
      */
+    /**
+     * GET /v1/variants/{id}/articles?lang=tr|en&limit=3  (1.31.0, uygulama Kaynak sekmesi)
+     * Sikkenin hikâyeleri: darphane yer etiketi ya da hükümdar etiketiyle bağlı blog yazıları. Kural mod_numistr_ilgili
+     * 1.4.1 ile aynı: dönem süzgeci, sıra, Price tipi İskender. Öğeler /v1/articles listesiyle aynı biçim. Bağ yoksa boş dizi.
+     */
+    private function handleVariantArticles(string $uri, int $variantId): void
+    {
+        $this->dbg('variants-articles', $uri);
+        $this->checkRateLimit('catalog_images', $this->config['RATE_LIMITS']['catalog_images'] ?? 600, 'RATE_LIMITED');
+
+        try {
+            $app   = Factory::getApplication();
+            $lang  = ($app->input->getString('lang', 'tr') === 'en') ? 'en' : 'tr';
+            $items = class_exists('NumisTRRelatedArticles')
+                ? NumisTRRelatedArticles::forCoin($variantId, $lang, NumisTRRelatedArticles::sinir($app->input->getInt('limit', 3)))
+                : [];
+
+            $this->responseHelper->sendJson(['data' => $items]);
+        } catch (\Throwable $e) {
+            $this->responseHelper->sendServerError($e);
+        }
+    }
+
     private function handleVariantImages(string $uri, int $variantId): void
     {
         $this->dbg('variants-images', $uri);
@@ -3203,51 +3286,96 @@ class PlgWebservicesNumistr extends CMSPlugin
             }
 
             $catIdsSql = implode(',', array_map('intval', $allCatIds));
+            $alanlar   = ['c.id', 'c.title', 'c.alias', 'c.introtext', 'c.fulltext', 'c.catid', 'c.created', 'c.modified'];
 
-            // Get total count of published articles
-            $countQuery = $db->getQuery(true)
-                ->select('COUNT(*)')
-                ->from($db->quoteName('#__content'))
-                ->where($db->quoteName('catid') . ' IN (' . $catIdsSql . ')')
-                ->where($db->quoteName('state') . ' = 1');
-
-            $db->setQuery($countQuery);
-            $totalArticles = (int)$db->loadResult();
-
-            if ($totalArticles === 0) {
-                $this->responseHelper->sendError(404, 'No articles found');
-                return;
-            }
-
-            // Daily rotation: use date as seed for consistent daily selection
-            $today = date('Y-m-d');
-            $seed = crc32($today);
-            $offset = $seed % $totalArticles;
-
-            // Get the featured article
-            $articleQuery = $db->getQuery(true)
-                ->select([
-                    $db->quoteName('id'),
-                    $db->quoteName('title'),
-                    $db->quoteName('alias'),
-                    $db->quoteName('introtext'),
-                    $db->quoteName('fulltext'),
-                    $db->quoteName('catid'),
-                    $db->quoteName('created'),
-                    $db->quoteName('modified'),
-                ])
-                ->from($db->quoteName('#__content'))
-                ->where($db->quoteName('catid') . ' IN (' . $catIdsSql . ')')
-                ->where($db->quoteName('state') . ' = 1')
-                ->order($db->quoteName('id') . ' ASC')
-                ->setLimit(1, $offset);
-
-            $db->setQuery($articleQuery);
+            // 1.31.0 GÜNÜN HİKÂYESİ: o gün (TR saati) yayımlanan blog yazısı varsa odur (sabah 07:05 planlı yayını);
+            // site, sosyal medya ve uygulama aynı gün aynı hikâyeyi anlatır.
+            $tz    = new \DateTimeZone('Europe/Istanbul');
+            $gun   = new \DateTime('today', $tz);
+            $bas   = (clone $gun)->setTimezone(new \DateTimeZone('UTC'));
+            $son   = (clone $bas)->modify('+1 day');
+            $simdi = Factory::getDate()->toSql();
+            $db->setQuery($db->getQuery(true)
+                ->select($db->quoteName($alanlar))
+                ->from($db->quoteName('#__content', 'c'))
+                ->where($db->quoteName('c.catid') . ' IN (' . $catIdsSql . ')')
+                ->where($db->quoteName('c.state') . ' = 1')
+                ->where($db->quoteName('c.publish_up') . ' >= ' . $db->quote($bas->format('Y-m-d H:i:s')))
+                ->where($db->quoteName('c.publish_up') . ' < ' . $db->quote($son->format('Y-m-d H:i:s')))
+                ->where($db->quoteName('c.publish_up') . ' <= ' . $db->quote($simdi))
+                ->order($db->quoteName('c.publish_up') . ' DESC')
+                ->setLimit(1));
             $article = $db->loadAssoc();
+            $reason  = 'today';
+
+            if (!$article) {
+                // Yoksa günlük dönüşüm: yer / hükümdar etiketli (sikkeye bağlı) yazılar arasında; hiç yoksa bütün yazılar.
+                $reason   = 'rotation';
+                $etiketli = 'EXISTS (SELECT 1 FROM ' . $db->quoteName('#__contentitem_tag_map', 'm')
+                    . ' JOIN ' . $db->quoteName('#__tags', 't') . ' ON t.id = m.tag_id'
+                    . ' JOIN ' . $db->quoteName('#__tags', 'p') . ' ON p.id = t.parent_id'
+                    . " WHERE m.type_alias = 'com_content.article' AND m.content_item_id = c.id"
+                    . " AND p.alias IN ('yerler', 'hukumdarlar'))";
+                $kume = function ($q) use ($db, $catIdsSql) {
+                    return $q->from($db->quoteName('#__content', 'c'))
+                        ->where($db->quoteName('c.catid') . ' IN (' . $catIdsSql . ')')
+                        ->where($db->quoteName('c.state') . ' = 1');
+                };
+
+                $db->setQuery($kume($db->getQuery(true)->select('COUNT(*)'))->where($etiketli));
+                $totalArticles = (int)$db->loadResult();
+
+                if ($totalArticles === 0) {
+                    $etiketli = '1 = 1';
+                    $db->setQuery($kume($db->getQuery(true)->select('COUNT(*)')));
+                    $totalArticles = (int)$db->loadResult();
+                }
+
+                if ($totalArticles === 0) {
+                    $this->responseHelper->sendError(404, 'No articles found');
+                    return;
+                }
+
+                // Günlük dönüşüm: tarih (TR) tohumu, gün boyu aynı yazı
+                $offset = crc32($gun->format('Y-m-d')) % $totalArticles;
+                $db->setQuery($kume($db->getQuery(true)->select($db->quoteName($alanlar)))
+                    ->where($etiketli)
+                    ->order($db->quoteName('c.id') . ' ASC')
+                    ->setLimit(1, $offset));
+                $article = $db->loadAssoc();
+            }
 
             if (!$article) {
                 $this->responseHelper->sendError(404, 'Article not found');
                 return;
+            }
+
+            // Hikâyenin sikkesi: yazıdaki ilk görselli sikke (TR katalog kimliği + 480 px küçük görsel); yoksa null.
+            $coin = null;
+
+            if (class_exists('NumisTRRelatedArticles')) {
+                try {
+                    $sikkeler = array_slice(NumisTRRelatedArticles::yazininSikkeleri(
+                        (string)$article['introtext'] . ' ' . (string)$article['fulltext']), 0, 8);
+
+                    if ($sikkeler) {
+                        $basliklar = $db->setQuery($db->getQuery(true)
+                            ->select($db->quoteName(['id', 'title']))
+                            ->from($db->quoteName('#__content'))
+                            ->where($db->quoteName('id') . ' IN (' . implode(',', $sikkeler) . ')'))->loadAssocList('id', 'title') ?: [];
+                        $satirlar  = $this->attachListThumbs($db, array_map(function ($i) { return ['article_id' => $i]; }, $sikkeler));
+
+                        foreach ($satirlar as $s) {
+                            if (!empty($s['thumb_url'])) {
+                                $coin = ['id' => (int)$s['article_id'], 'title' => (string)($basliklar[$s['article_id']] ?? ''),
+                                    'thumb_url' => $s['thumb_url']];
+                                break;
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    $coin = null;
+                }
             }
 
             // Get category name
@@ -3277,6 +3405,9 @@ class PlgWebservicesNumistr extends CMSPlugin
                     'category' => $categoryName,
                     'category_id' => (int)$article['catid'],
                     'created' => $article['created'],
+                    // 1.31.0 (eklemeli; eski uygulamalar yok sayar)
+                    'reason' => $reason,
+                    'coin' => $coin,
                 ]
             ];
 
